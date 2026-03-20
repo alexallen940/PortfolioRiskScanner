@@ -1,6 +1,7 @@
 from collections import defaultdict
 import json
 import os
+import re
 from sklearn.feature_extraction.text import TfidfVectorizer
 from models import Article, RiskData
 import numpy as np
@@ -57,31 +58,21 @@ def get_portfolio_risk_types(
     if not portfolio_texts:
         return []
 
-    portfolio_doc = " ".join(portfolio_texts).replace('"', "")
-
-    try:
-        portfolio_vector = vectorizer.fit_transform([portfolio_doc]).toarray().flatten()
-    except ValueError:
-        return []
+    portfolio_doc = " ".join(portfolio_texts).replace('"', "").lower()
 
     risk_word_bank_file_path = os.path.join(project_root, "data", "risk_word_bank.json")
 
     with open(risk_word_bank_file_path, "r") as file:
         risk_word_bank = json.load(file)
 
-    feature_names = vectorizer.get_feature_names_out()
+    # Count keyword matches in portfolio text (much faster than TF-IDF + edit_distance)
+    risk_counts = defaultdict(int)
 
-    # indices of the most frequent features in the portfolio vector in descending order
-    feature_freq_ranking_indices = np.argsort(portfolio_vector)[::-1]
+    for risk_type, risk_signals in risk_word_bank.items():
+        for risk_signal in risk_signals:
+            if re.search(rf"\b{re.escape(risk_signal)}\b", portfolio_doc):
+                risk_counts[risk_type] += 1
 
-    res = []
-
-    for _, i in enumerate(feature_freq_ranking_indices):
-        feature = feature_names[i]
-
-        for risk_type, risk_signals in risk_word_bank.items():
-            for risk_signal in risk_signals:
-                if edit_distance(feature, risk_signal) <= 10:
-                    res.append(risk_type)
-
-    return res[:top_k]
+    # Return top risk types by count
+    sorted_risks = sorted(risk_counts.items(), key=lambda x: x[1], reverse=True)
+    return [risk_type for risk_type, _ in sorted_risks[:top_k]]
