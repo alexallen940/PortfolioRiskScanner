@@ -62,8 +62,8 @@ function App(): JSX.Element {
       return
     }
 
-    if (queryInput.trim().length < 12) {
-      setValidationMessage('Add a slightly more specific query so the recommendation cards have useful context.')
+    if (queryInput.trim().length === 0) {
+      setValidationMessage('Enter at least one desired stock characteristic.')
       setResults(null)
       return
     }
@@ -166,11 +166,6 @@ function App(): JSX.Element {
                   <span className="report-value">{results.riskTypes.length > 0 ? results.riskTypes.join(', ') : 'No strong risk signals detected'}</span>
                 </p>
               </div>
-
-              <p className="risk-types-line">
-                <strong className="report-label">Summary:</strong>{' '}
-                <span className="report-value">{results.summary}</span>
-              </p>
 
               <div className="recommendations-section">
                 <h3 className="section-divider">Stock Suggestions</h3>
