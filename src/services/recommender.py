@@ -7,7 +7,7 @@ import json
 import os
 
 # load the risk word bank
-BASE_DIR = os.path.dirname(os.path.dirname(__file__))
+BASE_DIR = os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
 json_path = os.path.join(BASE_DIR, "data", "risk_word_bank.json")
 
 with open(json_path, "r") as f:
@@ -54,7 +54,7 @@ def get_stock_recommendations(
     portfolio_doc = " ".join(portfolio_texts).replace('"', "")
 
     # same TF-IDF space as the S&P 500
-    portfolio_vector = vectorizer.transform(portfolio_doc)
+    portfolio_vector = vectorizer.transform([portfolio_doc])
 
     # length 503 (for each stock in the S&P 500's similarity score to portfolio)
     similarities = cosine_similarity(portfolio_vector, tfidf_matrix).flatten()
@@ -73,7 +73,7 @@ def get_recommendation_desc(ticker, max_articles=10):
     # take 'max_articles' number of most recent articles for ticker
     articles = (
         Article.query.filter_by(ticker=ticker.upper().strip())
-        .order_by(Article.datetime.desc())
+        .order_by(Article.id.desc())
         .limit(max_articles)
         .all()
     )

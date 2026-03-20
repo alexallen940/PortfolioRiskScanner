@@ -30,7 +30,7 @@ def get_portfolio_risk_score(user_portfolio):
 def get_portfolio_risk_types(
     user_portfolio,
     top_k=5,
-    vectorizer=TfidfVectorizer(stop_words="english", max_features=5000, ngram_range=(1, 3), min_df=5),
+    vectorizer=TfidfVectorizer(stop_words="english", max_features=5000, ngram_range=(1, 3), min_df=1),
 ):
     ticker_docs = {}
     articles = Article.query.all()
@@ -54,9 +54,15 @@ def get_portfolio_risk_types(
         if ticker in ticker_docs:
             portfolio_texts.append(ticker_docs[ticker])
 
+    if not portfolio_texts:
+        return []
+
     portfolio_doc = " ".join(portfolio_texts).replace('"', "")
 
-    portfolio_vector = vectorizer.fit_transform([portfolio_doc]).flatten()
+    try:
+        portfolio_vector = vectorizer.fit_transform([portfolio_doc]).toarray().flatten()
+    except ValueError:
+        return []
 
     risk_word_bank_file_path = os.path.join(project_root, "data", "risk_word_bank.json")
 
