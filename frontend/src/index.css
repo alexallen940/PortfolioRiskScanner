@@ -4,13 +4,29 @@
   box-sizing: border-box;
 }
 
+:root {
+  color: #111827;
+  background: #f9f8f5;
+  font-family: 'Inter', sans-serif;
+  line-height: 1.5;
+  font-weight: 400;
+}
+
 body {
-  font-family: 'Open Sans', sans-serif;
+  min-width: 320px;
+  min-height: 100vh;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+  background: transparent;
 }
 
 #root {
   width: 100%;
   min-height: 100vh;
+}
+
+button,
+textarea,
+select {
+  font: inherit;
 }
