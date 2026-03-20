@@ -47,7 +47,9 @@ def get_portfolio_risk_types(
         ticker_docs[article.ticker].append(text)
 
     # convert lists of article texts into one big doc per ticker
-    ticker_docs = {ticker: " ".join(texts).replace('"', "") for ticker, texts in ticker_docs.items()}
+    ticker_docs = {
+        ticker: " ".join(texts).replace('"', "").replace("-", " ").lower() for ticker, texts in ticker_docs.items()
+    }
 
     portfolio_texts = []
 
@@ -58,34 +60,49 @@ def get_portfolio_risk_types(
     if not portfolio_texts:
         return []
 
-    portfolio_doc = " ".join(portfolio_texts).replace('"', "").lower()
+    portfolio_doc = " ".join(portfolio_texts).replace('"', "").replace("-", " ").lower()
 
-    try:
-        portfolio_vector = vectorizer.fit_transform([portfolio_doc]).toarray().flatten()
-    except ValueError:
-        return []
+    # try:
+    #     portfolio_vector = vectorizer.fit_transform([portfolio_doc]).toarray().flatten()
+    # except ValueError:
+    #     return []
 
     risk_word_bank_file_path = os.path.join(project_root, "data", "risk_word_bank.json")
 
     with open(risk_word_bank_file_path, "r") as file:
         risk_word_bank = json.load(file)
 
-    feature_names = vectorizer.get_feature_names_out()
+    # feature_names = vectorizer.get_feature_names_out()
 
-    # indices of the most frequent features in the portfolio vector in descending order
-    feature_freq_ranking_indices = np.argsort(portfolio_vector)[::-1]
+    # # indices of the most frequent features in the portfolio vector in descending order
+    # feature_freq_ranking_indices = np.argsort(portfolio_vector)[::-1]
 
-    res = []
+    # res = []
 
-    for _, i in enumerate(feature_freq_ranking_indices):
-        feature = feature_names[i]
-        for risk_type, risk_signals in risk_word_bank.items():
-            if risk_type in res:
-                continue
-            for risk_signal in risk_signals:
-                if edit_distance(feature, risk_signal) <= 10:
-                    if risk_type in res:
-                        break
-                    res.append(risk_type)
+    # for _, i in enumerate(feature_freq_ranking_indices):
+    #     feature = feature_names[i]
+    #     for risk_type, risk_signals in risk_word_bank.items():
+    #         if risk_type in res:
+    #             continue
+    #         for risk_signal in risk_signals:
+    #             if edit_distance(feature, risk_signal) <= 10:
+    #                 if risk_type in res:
+    #                     break
+    #                 res.append(risk_type)
 
+    # return res[:top_k]
+
+    risk_type_counts = {}
+    for risk_type in risk_word_bank:
+        risk_type_counts[risk_type] = 0
+
+    for risk_type, risk_signals in risk_word_bank.items():
+        for risk_signal in risk_signals:
+            pattern = rf"\b{re.escape(risk_signal)}\b"
+
+            if re.search(pattern, portfolio_doc):
+                risk_type_counts[risk_type] += 1
+
+    ranked_risk_types = sorted(risk_type_counts.items(), key=lambda x: x[1], reverse=True)
+    res = [risk_type for risk_type, count in ranked_risk_types if count > 0]
     return res[:top_k]

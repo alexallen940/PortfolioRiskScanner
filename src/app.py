@@ -87,7 +87,7 @@ init_db()
 # with app.app_context():
 #     print(
 #         get_portfolio_risk_types(
-#             ["NVDA", "3M"],
+#             ["XOM", "CVX", "COP", "EOG", "SLB", "HAL"],
 #             top_k=5,
 #         )
 #     )

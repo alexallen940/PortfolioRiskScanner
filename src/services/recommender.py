@@ -33,7 +33,9 @@ def get_stock_recommendations(
         ticker_docs[article.ticker].append(text)
 
     # convert lists of article texts into one big doc per ticker
-    ticker_docs = {ticker: " ".join(texts).replace('"', "") for ticker, texts in ticker_docs.items()}
+    ticker_docs = {
+        ticker: " ".join(texts).replace('"', "").replace("-", " ").lower() for ticker, texts in ticker_docs.items()
+    }
 
     tickers = list(ticker_docs.keys())
     documents = list(ticker_docs.values())
@@ -51,7 +53,7 @@ def get_stock_recommendations(
         return []
 
     # combine all portfolio ticker docs into one big doc
-    portfolio_doc = " ".join(portfolio_texts).replace('"', "")
+    portfolio_doc = " ".join(portfolio_texts).replace('"', "").replace("-", " ").lower()
 
     # same TF-IDF space as the S&P 500
     portfolio_vector = vectorizer.transform([portfolio_doc])
@@ -69,17 +71,14 @@ def get_stock_recommendations(
     return results[:top_k]
 
 
-def get_recommendation_desc(ticker, max_articles=10):
+def get_recommendation_desc(ticker, max_articles=25):
     # take 'max_articles' number of most recent articles for ticker
     articles = (
-        Article.query.filter_by(ticker=ticker.upper().strip())
-        .order_by(Article.id.desc())
-        .limit(max_articles)
-        .all()
+        Article.query.filter_by(ticker=ticker.upper().strip()).order_by(Article.id.desc()).limit(max_articles).all()
     )
 
     # combine all headlines and summary into one string
-    combined_text = " ".join(f"{a.headline} {a.summary}".lower() for a in articles)
+    combined_text = " ".join(f"{a.headline} {a.summary}".replace("-", " ").lower() for a in articles)
 
     # counts number of times each risk signal appears
     risk_counts = Counter()
@@ -109,7 +108,7 @@ def get_recommendation_desc(ticker, max_articles=10):
     top_risks = []
     for r, ct in sort_signals[:2]:
         top_risks.append(r)
-    
+
     bullets = []
     for risk in top_risks:
         # top 2 keywords
