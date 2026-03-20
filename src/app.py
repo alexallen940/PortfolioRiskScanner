@@ -4,6 +4,8 @@ import os
 from dotenv import load_dotenv
 from flask import Flask
 from datetime import datetime
+from services.risk import get_portfolio_risk_score, get_portfolio_risk_types
+
 
 load_dotenv()
 from flask_cors import CORS
@@ -76,11 +78,19 @@ def init_db():
 
 init_db()
 
-with app.app_context():
-    print(Article.query.count())
+# with app.app_context():
+#     print(Article.query.count())
 
-with app.app_context():
-    print(RiskData.query.count())
+# with app.app_context():
+#     print(RiskData.query.count())
+
+# with app.app_context():
+#     print(
+#         get_portfolio_risk_types(
+#             ["NVDA", "3M"],
+#             top_k=5,
+#         )
+#     )
 
 if __name__ == "__main__":
     app.run(debug=True, host="0.0.0.0", port=5001)
