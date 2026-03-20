@@ -1,0 +1,70 @@
+{
+  "market volatility": [
+    "volatility", "selloff", "drop", "decline", "plunge", "uncertainty",
+    "pressure", "downturn", "weakness", "market reaction", "price swings",
+    "bearish", "bullish", "correction", "instability", "weak", "headwinds"
+  ],
+
+  "regulatory risk": [
+    "regulation", "regulatory", "antitrust", "lawsuit", "probe", "investigation",
+    "sec", "fine", "penalty", "compliance", "ban", "legal action",
+    "settlement", "litigation", "court ruling", "scrutiny",
+    "doj", "ftc"
+  ],
+
+  "financial risk": [
+    "debt", "loss", "net loss", "earnings miss", "missed expectations",
+    "revenue miss", "cash flow", "negative cash flow", "bankruptcy",
+    "downgrade", "credit risk", "liquidity", "default",
+    "margin pressure", "profit warning", "guidance cut",
+    "weak earnings", "declining revenue", "miss"
+  ],
+
+  "operational risk": [
+    "supply chain", "recall", "disruption", "shutdown", "strike",
+    "delay", "production", "shortage", "closure",
+    "logistics issues", "inventory", "capacity constraints",
+    "labor shortage", "equipment failure", "layoffs"
+  ],
+
+  "reputational risk": [
+    "controversy", "scandal", "backlash", "criticism", "boycott",
+    "fraud", "misconduct", "ethics", "data breach", "negative press", "whistleblower",
+    "allegations", "outrage", "public backlash"
+  ],
+
+  "geopolitical risk": [
+    "tariff", "sanction", "trade war", "geopolitical", "war", "politics",
+    "conflict", "exports", "imports",
+    "foreign policy", "tensions", "embargo",
+    "global tensions", "instability", "geopolitical tensions"
+  ],
+
+  "macroeconomic risk": [
+    "inflation", "interest rates", "rate hike", "fed", "federal reserve",
+    "economic slowdown", "recession", "macro environment",
+    "tightening", "monetary policy", "unemployment", "fiscal", "spending pressure", 
+    "spending slows", "depression", "socioeconomic",
+    "consumer spending slowdown"
+  ],
+
+  "sector-specific risk": [
+    "industry downturn", "sector weakness",
+    "demand slows", "oversupply", "competition", "pressure",
+    "pricing pressure", "market saturation"
+  ],
+
+  "technology risk": [
+    "cybersecurity", "cyber attack", "hack", "system outage",
+    "technical issue", "software bug", "ai risk", "automation risk",
+    "platform failure", "data leak", "infrastructure failure", "security concerns",
+    "privacy concerns", "data breach", "malware", "vulnerability"
+  ],
+
+  "environmental risk": [
+    "climate", "environmental impact", "emissions", "pollution",
+    "carbon", "sustainability concerns", "esg concerns",
+    "environmental regulation", "greenwashing", "resource depletion",
+    "greenhouse gas"
+  ]
+}

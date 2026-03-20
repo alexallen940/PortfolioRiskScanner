@@ -4,6 +4,8 @@ Docker/__pycache__
 
 venv/
 
+.conda
+
 *.pyc
 __pycache__/
 
