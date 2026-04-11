@@ -1,29 +1,28 @@
 {
   "market volatility": [
     "volatility", "selloff", "price drop", "decline", "plunge", "uncertainty",
-    "pressure", "downturn", "weakness", "market reaction", "price swings",
-    "bearish market", "bullish market", "corrections", "instability", "headwinds"
+    "pressure", "downturn", "share price weakness", "market reaction", "price swings",
+    "bearish market", "bullish market", "corrections", "instability", "headwinds", "slowing growth"
   ],
 
   "regulatory risk": [
-    "regulation", "antitrust", "lawsuit", "investigation",
-    "sec", "fines", "penalty", "compliance", "ban", "legal action",
-    "settlement", "litigation", "court ruling",
-    "doj", "ftc", "lawsuit"
+    "regulation", "antitrust", "lawsuit", "investigation", "fines", "penalty", "compliance", "ban", "legal action",
+    "settlement", "litigation", "court ruling", "regulations", 
+    "doj", "ftc"
   ],
 
   "financial risk": [
     "debt", "net losses", "earnings miss", "missed expectations",
     "revenue miss", "cash flow", "negative cash flow", "bankruptcy", "credit risk", "liquidity", "default",
     "margin pressure", "profit warning", "guidance cut",
-    "weak earnings", "declining revenue"
+    "weak earnings", "declining revenue", "revenue decline"
   ],
 
   "operational risk": [
     "supply chain", "recalls", "shutdowns", "strikes",
     "delays", "underproduction", "overproduction", "shortage",
     "logistics issues", "inventory", "capacity constraints",
-    "labor shortage", "equipment failure", "layoffs"
+    "labor shortage", "equipment failure", "layoffs", "outdated business model", "outdated business models"
   ],
 
   "reputational risk": [
@@ -35,7 +34,7 @@
   "geopolitical risk": [
     "tariffs", "sanctions", "trade war", "geopolitics", "war",
     "conflict", "exports", "imports",
-    "foreign policy", "tensions", "embargoes",
+    "foreign policy", "embargoes",
     "global tensions", "instability", "geopolitical tensions"
   ],
 
@@ -43,7 +42,7 @@
     "inflation", "interest rates", "rate hike", "fed", "federal reserve",
     "economic slowdown", "recession", "macro environment", "monetary policy", "unemployment", "spending pressure", 
     "spending slows", "depression", "socioeconomics",
-    "consumer spending slowdown"
+    "consumer spending slowdown", "stagflation", "macro uncertainty", "consumer spending slows"
   ],
 
   "sector-specific risk": [
@@ -56,7 +55,7 @@
     "cybersecurity", "cyber attack", "hacks", "system outage",
     "technical issue", "software bugs", "ai risk", "automation risk",
     "platform failure", "data leak", "infrastructure failure", "security concerns",
-    "privacy concerns", "data breach", "malware", "vulnerabilities"
+    "privacy concerns", "data breach", "malware", "vulnerabilities", "cyber threats"
   ],
 
   "environmental risk": [

@@ -11,6 +11,7 @@ current_directory = os.path.dirname(os.path.abspath(__file__))
 project_root = os.path.dirname(os.path.dirname(current_directory))
 
 
+
 def get_portfolio_risk_score(user_portfolio):
     scores = []
     for ticker in user_portfolio:

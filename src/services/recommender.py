@@ -2,6 +2,8 @@ import re
 from collections import Counter
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.metrics.pairwise import cosine_similarity
+from sklearn.decomposition import TruncatedSVD
+from services.svd import get_fitted_svd
 from models import Article
 import json
 import os
@@ -13,11 +15,24 @@ json_path = os.path.join(BASE_DIR, "data", "risk_word_bank.json")
 with open(json_path, "r") as f:
     RISK_KEYWORDS = json.load(f)
 
+json_path = os.path.join(BASE_DIR, "data", "protected_words.json")
+
+with open(json_path, "r") as f:
+    PROTECTED_WORDS = json.load(f)
+
+
+def protect_bigrams(text, protected):
+    for bigram in protected:
+        text = re.sub(rf"\b{bigram}\b", bigram.replace(" ", "_"), text, flags=re.IGNORECASE)
+    return text
+
 
 def get_stock_recommendations(
     user_portfolio,
     top_k=10,
-    vectorizer=TfidfVectorizer(stop_words="english", max_features=5000, ngram_range=(1, 3), min_df=5),
+    vectorizer=TfidfVectorizer(stop_words="english", max_features=5000, ngram_range=(1, 3), min_df=10),
+    use_svd=True,
+    n_components=20,
 ):
     ticker_docs = {}
     articles = Article.query.all()
@@ -30,11 +45,12 @@ def get_stock_recommendations(
             ticker_docs[article.ticker] = []
 
         # add the article text under that ticker
-        ticker_docs[article.ticker].append(text)
+        ticker_docs[article.ticker].append(protect_bigrams(text, protected=PROTECTED_WORDS["extra_words"]))
 
     # convert lists of article texts into one big doc per ticker
     ticker_docs = {
-        ticker: " ".join(texts).replace('"', "").replace("-", " ").lower() for ticker, texts in ticker_docs.items()
+        ticker: " ".join(texts).replace('"', "").replace("-", " ").lower().strip()
+        for ticker, texts in ticker_docs.items()
     }
 
     tickers = list(ticker_docs.keys())
@@ -53,13 +69,21 @@ def get_stock_recommendations(
         return []
 
     # combine all portfolio ticker docs into one big doc
-    portfolio_doc = " ".join(portfolio_texts).replace('"', "").replace("-", " ").lower()
+    portfolio_doc = " ".join(portfolio_texts).replace('"', "").replace("-", " ").lower().strip()
 
     # same TF-IDF space as the S&P 500
     portfolio_vector = vectorizer.transform([portfolio_doc])
 
+    if use_svd:
+        svd = get_fitted_svd(ticker_docs, portfolio_doc, vectorizer, n_components)
+        doc_repr = svd.transform(tfidf_matrix)
+        query_repr = svd.transform(portfolio_vector)
+    else:
+        doc_repr = tfidf_matrix
+        query_repr = portfolio_vector
+
     # length 503 (for each stock in the S&P 500's similarity score to portfolio)
-    similarities = cosine_similarity(portfolio_vector, tfidf_matrix).flatten()
+    similarities = cosine_similarity(query_repr, doc_repr).flatten()
 
     results = []
     for i, score in enumerate(similarities):
