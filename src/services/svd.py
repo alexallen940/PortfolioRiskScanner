@@ -30,13 +30,16 @@ def get_fitted_svd(
 
     feature_names = vectorizer.get_feature_names_out()
 
+    # dimensions are ordered by singular value in descending order
+    print(f"\nExplained variance ratio {svd.singular_values_}")
+
     for i, component in enumerate(svd.components_):
         # positive terms
-        top_indices = component.argsort()[-20:][::-1]  # top k words
+        top_indices = component.argsort()[-20:][::-1]  # top 20 positive words
         top_words = [feature_names[j] for j in top_indices]
 
         # negative terms
-        top_neg_ind = component.argsort()[:10]
+        top_neg_ind = component.argsort()[:10]  # top 10 negative words
         top_neg_words = [feature_names[j] for j in top_neg_ind]
 
         print(f"\nDimension {i}")

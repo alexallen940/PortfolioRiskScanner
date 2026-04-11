@@ -1,8 +1,8 @@
 import re
 from collections import Counter
+import numpy as np
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.metrics.pairwise import cosine_similarity
-from sklearn.decomposition import TruncatedSVD
 from services.svd import get_fitted_svd
 from models import Article
 import json
@@ -90,21 +90,82 @@ def get_stock_recommendations(
         svd = get_fitted_svd(ticker_docs, combined_query_doc, vectorizer, n_components)
         doc_repr = svd.transform(tfidf_matrix)
         query_repr = svd.transform(portfolio_vector)
+
+        # length 503 (for each stock in the S&P 500's similarity score to portfolio)
+        similarities = cosine_similarity(query_repr, doc_repr).flatten()
+
+        print("\n========== SVD SEARCH RESULTS ==========")
+
+        # print top results
+        sorted_tickers_idx = np.argsort(similarities)[::-1]
+
+        recommendations_ind = []
+        for idx in sorted_tickers_idx:
+            if tickers[idx] not in user_portfolio:
+                recommendations_ind.append(idx)
+
+        recommendations_ind = recommendations_ind[:4]
+
+        print("\nTop Stock Recommendations:")
+        for idx in recommendations_ind:
+            print(f"{tickers[idx]} -> similarity {similarities[idx]:.4f}")
+
+        q = query_repr.flatten()
+
+        for idx in recommendations_ind:
+            d = doc_repr[idx].flatten()
+
+            explain_recommendation(idx, q, d, tickers, vectorizer, svd, top_k_dims=5)
+
     else:
         doc_repr = tfidf_matrix
         query_repr = portfolio_vector
 
-    # length 503 (for each stock in the S&P 500's similarity score to portfolio)
-    similarities = cosine_similarity(query_repr, doc_repr).flatten()
+        # length 503 (for each stock in the S&P 500's similarity score to portfolio)
+        similarities = cosine_similarity(query_repr, doc_repr).flatten()
 
     results = []
-    for i, score in enumerate(similarities):
-        ticker = tickers[i]
+    for idx, score in enumerate(similarities):
+        ticker = tickers[idx]
         if ticker not in user_portfolio:
             results.append({"ticker": ticker, "similarity": float(score)})
 
     results.sort(key=lambda x: x["similarity"], reverse=True)
+
     return results[:top_k]
+
+
+def explain_recommendation(idx, q=[], d=[], tickers=[], vectorizer=None, svd=None, top_k_dims=3):
+
+    print(f"\n--- {tickers[idx]} ---")
+
+    products = q * d
+    top_dims = np.argsort(np.abs(products))[::-1][:top_k_dims]
+
+    feature_names = vectorizer.get_feature_names_out()
+
+    for dim in top_dims:
+        relation = (
+            "both positive"
+            if (q[dim] > 0 and d[dim] > 0)
+            else ("both negative" if (q[dim] < 0 and d[dim] < 0) else "opposite signs")
+        )
+
+        component = svd.components_[dim]
+
+        top_pos_idx = component.argsort()[-5:][::-1]
+        top_neg_idx = component.argsort()[:5]
+
+        pos_terms = [feature_names[j] for j in top_pos_idx]
+        neg_terms = [feature_names[j] for j in top_neg_idx]
+
+        print(f"\nDimension {dim}")
+        print(f"  Query value: {q[dim]:.4f}")
+        print(f"  Stock value: {d[dim]:.4f}")
+        print(f"  Product: {products[dim]:.4f}")
+        print(f"  Relationship: {relation}")
+        print(f"  Positive terms: {pos_terms}")
+        print(f"  Negative terms: {neg_terms}")
 
 
 def get_recommendation_desc(ticker, max_articles=25):
