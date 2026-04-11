@@ -76,6 +76,7 @@ function App(): JSX.Element {
         postJson<{ risk_score: number }>('/api/portfolio/risk-score', { portfolio: parsedPortfolio }),
         postJson<{ risk_types: string[] }>('/api/portfolio/risk-types', { portfolio: parsedPortfolio }),
         postJson<{ recommendations: Array<{ ticker: string; similarity: number }> }>('/api/portfolio/recommendations', {
+          desired_characteristics: queryInput.trim(),
           portfolio: parsedPortfolio,
         }),
       ])

@@ -31,8 +31,16 @@ def get_fitted_svd(
     feature_names = vectorizer.get_feature_names_out()
 
     for i, component in enumerate(svd.components_):
+        # positive terms
         top_indices = component.argsort()[-20:][::-1]  # top k words
         top_words = [feature_names[j] for j in top_indices]
-        print(f"Dimension {i}: {', '.join(top_words)}")
+
+        # negative terms
+        top_neg_ind = component.argsort()[:10]
+        top_neg_words = [feature_names[j] for j in top_neg_ind]
+
+        print(f"\nDimension {i}")
+        print("  Positive:", ", ".join(top_words))
+        print("  Negative:", ", ".join(top_neg_words))
 
     return svd

@@ -59,9 +59,13 @@ def register_routes(app):
     def recommend():
         data = request.get_json()
         portfolio = data.get("portfolio", [])
+        desired_characteristics = data.get("desired_characteristics", "").lower().strip()
 
         if not portfolio:
             return jsonify({"error": "Portfolio not provided"})
+        
+        if not desired_characteristics:
+            return jsonify({"error": "Free text query not provided"})
 
         vectorizer = TfidfVectorizer(stop_words="english", max_features=4000, ngram_range=(1, 2), min_df=15, max_df=0.9)
 
@@ -78,6 +82,7 @@ def register_routes(app):
 
         recommendations = get_stock_recommendations(
             portfolio,
+            desired_characteristics=desired_characteristics,
             vectorizer=vectorizer,
         )
 

@@ -15,20 +15,22 @@
     "debt", "net losses", "earnings miss", "missed expectations",
     "revenue miss", "cash flow", "negative cash flow", "bankruptcy", "credit risk", "liquidity", "default",
     "margin pressure", "profit warning", "guidance cut",
-    "weak earnings", "declining revenue", "revenue decline"
+    "weak earnings", "declining revenue", "revenue decline", "hyperscaler borrowing", "loans", "borrowing"
   ],
 
   "operational risk": [
+    "recall", "shutdown", "strike", "delay",
     "supply chain", "recalls", "shutdowns", "strikes",
     "delays", "underproduction", "overproduction", "shortage",
     "logistics issues", "inventory", "capacity constraints",
-    "labor shortage", "equipment failure", "layoffs", "outdated business model", "outdated business models"
+    "labor shortage", "equipment failure", "layoffs", "outdated business model", "outdated business models",
+    "electricity costs"
   ],
 
   "reputational risk": [
     "controversy", "scandals", "backlash", "criticism", "boycott",
     "fraud", "misconduct", "ethics", "data breach", "negative press", "whistleblower",
-    "allegations", "outrage", "public backlash"
+    "allegations", "outrage", "public backlash", "scandal"
   ],
 
   "geopolitical risk": [
@@ -42,7 +44,7 @@
     "inflation", "interest rates", "rate hike", "fed", "federal reserve",
     "economic slowdown", "recession", "macro environment", "monetary policy", "unemployment", "spending pressure", 
     "spending slows", "depression", "socioeconomics",
-    "consumer spending slowdown", "stagflation", "macro uncertainty", "consumer spending slows"
+    "consumer spending slowdown", "stagflation", "macro uncertainty", "consumer spending slows", "tightening industrial supply"
   ],
 
   "sector-specific risk": [
@@ -55,13 +57,13 @@
     "cybersecurity", "cyber attack", "hacks", "system outage",
     "technical issue", "software bugs", "ai risk", "automation risk",
     "platform failure", "data leak", "infrastructure failure", "security concerns",
-    "privacy concerns", "data breach", "malware", "vulnerabilities", "cyber threats"
+    "privacy concerns", "data breach", "malware", "vulnerabilities", "cyber threats", "internet disruptions", "cyberattack"
   ],
 
   "environmental risk": [
     "climate change", "environmental impact", "emissions", "pollution",
     "carbon emissions", "sustainability concerns", "esg concerns",
     "environmental regulation", "greenwashing", "resource depletion",
-    "greenhouse gas"
+    "greenhouse gas" 
   ]
 }

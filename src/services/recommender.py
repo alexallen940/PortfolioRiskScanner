@@ -29,10 +29,13 @@ def protect_bigrams(text, protected):
 
 def get_stock_recommendations(
     user_portfolio,
+    desired_characteristics="",
     top_k=10,
     vectorizer=TfidfVectorizer(stop_words="english", max_features=5000, ngram_range=(1, 3), min_df=10),
     use_svd=True,
     n_components=20,
+    portfolio_weight=1,
+    text_weight=150,
 ):
     ticker_docs = {}
     articles = Article.query.all()
@@ -64,18 +67,27 @@ def get_stock_recommendations(
         if ticker in ticker_docs:
             portfolio_texts.append(ticker_docs[ticker])
 
-    # case when no valid portfolio tickers were found
-    if not portfolio_texts:
+    # free text query
+    characteristics_doc = protect_bigrams(desired_characteristics, protected=PROTECTED_WORDS["extra_words"])
+    characteristics_doc = characteristics_doc.replace('"', "").replace("-", " ").lower().strip()
+
+    # case when no valid portfolio tickers or free text query were found
+    if not portfolio_texts and not characteristics_doc:
         return []
 
     # combine all portfolio ticker docs into one big doc
     portfolio_doc = " ".join(portfolio_texts).replace('"', "").replace("-", " ").lower().strip()
 
+    # weighted combined query
+    combined_query_doc = (
+        ((portfolio_doc + " ") * portfolio_weight) + ((characteristics_doc + " ") * text_weight)
+    ).strip()
+
     # same TF-IDF space as the S&P 500
-    portfolio_vector = vectorizer.transform([portfolio_doc])
+    portfolio_vector = vectorizer.transform([combined_query_doc])
 
     if use_svd:
-        svd = get_fitted_svd(ticker_docs, portfolio_doc, vectorizer, n_components)
+        svd = get_fitted_svd(ticker_docs, combined_query_doc, vectorizer, n_components)
         doc_repr = svd.transform(tfidf_matrix)
         query_repr = svd.transform(portfolio_vector)
     else:
