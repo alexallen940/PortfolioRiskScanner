@@ -1,16 +1,18 @@
+import csv
 import re
 from collections import Counter
 import numpy as np
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.metrics.pairwise import cosine_similarity
 from services.svd import get_fitted_svd
-from models import Article
+from models import Article, RiskData
 import json
 import os
 
 # load the risk word bank
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
 json_path = os.path.join(BASE_DIR, "data", "risk_word_bank.json")
+articles_csv_path = os.path.join(BASE_DIR, "data", "articles.csv")
 
 with open(json_path, "r") as f:
     RISK_KEYWORDS = json.load(f)
@@ -25,6 +27,88 @@ def protect_bigrams(text, protected):
     for bigram in protected:
         text = re.sub(rf"\b{bigram}\b", bigram.replace(" ", "_"), text, flags=re.IGNORECASE)
     return text
+
+
+GENERIC_NAME_PREFIXES = (
+    "A Look At",
+    "Assessing",
+    "Why",
+    "Here",
+    "Is",
+    "How",
+    "What",
+    "Tracking",
+    "Final Trade",
+    "Stock Market Today",
+    "Live On",
+)
+
+
+def _clean_company_name(name):
+    cleaned = re.sub(r"\s+", " ", name).strip(" ,.-:")
+
+    if not cleaned:
+        return None
+
+    if cleaned.startswith(GENERIC_NAME_PREFIXES):
+        return None
+
+    if len(cleaned) > 70:
+        return None
+
+    return cleaned
+
+
+def _extract_company_name(text, ticker):
+    if not text:
+        return None
+
+    patterns = [
+        rf"^([A-Z0-9][A-Za-z0-9&.,'\- ]+?)\s+\((?:NYSE|NASDAQ|NasdaqGS|NasdaqGM|NasdaqCM|NYSEARCA):{ticker}\)",
+        rf"^([A-Z0-9][A-Za-z0-9&.,'\- ]+?)\s+\({ticker}\)",
+        r"^([A-Z0-9][A-Za-z0-9&.,'\- ]+?):",
+    ]
+
+    for pattern in patterns:
+        match = re.search(pattern, text)
+        if match:
+            cleaned = _clean_company_name(match.group(1))
+            if cleaned:
+                return cleaned
+
+    return None
+
+
+def _load_company_metadata():
+    metadata = {}
+
+    with open(articles_csv_path, "r") as file:
+        reader = csv.DictReader(file)
+        for row in reader:
+            ticker = row.get("ticker", "").strip().upper()
+            if not ticker:
+                continue
+
+            entry = metadata.setdefault(
+                ticker,
+                {"company_name": ticker, "logo_url": None},
+            )
+
+            if entry["company_name"] == ticker:
+                extracted_name = _extract_company_name(row.get("headline", ""), ticker) or _extract_company_name(
+                    row.get("summary", ""), ticker
+                )
+                if extracted_name:
+                    entry["company_name"] = extracted_name
+
+            image_url = row.get("image", "").strip()
+            if image_url and not entry["logo_url"]:
+                entry["logo_url"] = image_url
+
+    return metadata
+
+
+COMPANY_METADATA = _load_company_metadata()
 
 
 def get_stock_recommendations(
@@ -58,6 +142,7 @@ def get_stock_recommendations(
 
     tickers = list(ticker_docs.keys())
     documents = list(ticker_docs.values())
+    risk_scores = {row.ticker: row.risk_score_1_10 for row in RiskData.query.all()}
 
     # has 503 rows (one entry for each stock) and a certain number of words or phrases for columns
     tfidf_matrix = vectorizer.fit_transform(documents)
@@ -128,7 +213,16 @@ def get_stock_recommendations(
     for idx, score in enumerate(similarities):
         ticker = tickers[idx]
         if ticker not in user_portfolio:
-            results.append({"ticker": ticker, "similarity": float(score)})
+            company_metadata = COMPANY_METADATA.get(ticker, {})
+            results.append(
+                {
+                    "ticker": ticker,
+                    "similarity": float(score),
+                    "risk_score": risk_scores.get(ticker),
+                    "company_name": company_metadata.get("company_name", ticker),
+                    "logo_url": company_metadata.get("logo_url"),
+                }
+            )
 
     results.sort(key=lambda x: x["similarity"], reverse=True)
 
@@ -196,8 +290,7 @@ def get_recommendation_desc(ticker, max_articles=25):
     # the case where no keywords match
     if not risk_counts:
         return [
-            "No apparent risk themes based on recent news.",
-            "Need more info to generate summary.",
+            "no apparent risk themes based on recent news. need more info to generate summary.",
         ]
 
     # top 2 risk types
@@ -213,7 +306,7 @@ def get_recommendation_desc(ticker, max_articles=25):
 
         if keywords:
             keyword_text = " and ".join(keywords)
-            bullets.append(f"Signals of {risk} linked to {keyword_text}.")
+            bullets.append(f" {risk} linked to {keyword_text}")
         else:
             bullets.append(f"Susceptible to {risk} based on recent news coverage.")
     return bullets

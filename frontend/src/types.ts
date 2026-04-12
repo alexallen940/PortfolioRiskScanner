@@ -1,6 +1,9 @@
 export interface Recommendation {
   ticker: string
   similarity: number
+  riskScore?: number
+  companyName?: string
+  logoUrl?: string
   description?: string[]
 }
 
