@@ -7,7 +7,7 @@ import os
 from flask import send_from_directory, request, jsonify
 from models import db, Article, RiskData
 from services.recommender import get_stock_recommendations, get_recommendation_desc
-from services.risk import get_portfolio_risk_score, get_portfolio_risk_types
+from services.risk import get_portfolio_risk_score, get_portfolio_risk_types, get_portfolio_risk_breakdown
 from sklearn.feature_extraction.text import TfidfVectorizer
 
 
@@ -60,6 +60,14 @@ def register_routes(app):
         data = request.get_json()
         portfolio = data.get("portfolio", [])
         desired_characteristics = data.get("desired_characteristics", "").lower().strip()
+        query_weight_level = (data.get("query_weight_level", "medium") or "medium").strip().lower()
+
+        query_weight_map = {
+            "low": 110,
+            "medium": 150,
+            "high": 200,
+        }
+        text_weight = query_weight_map.get(query_weight_level, 150)
 
         if not portfolio:
             return jsonify({"error": "Portfolio not provided"})
@@ -84,6 +92,8 @@ def register_routes(app):
             portfolio,
             desired_characteristics=desired_characteristics,
             vectorizer=vectorizer,
+            text_weight=text_weight,
+            text_weight_level=query_weight_level if query_weight_level in query_weight_map else "medium",
         )
 
         return jsonify({"recommendations": recommendations})
@@ -97,7 +107,8 @@ def register_routes(app):
             return jsonify({"error": "Portfolio not provided"})
 
         risk_score = get_portfolio_risk_score(portfolio)
-        return jsonify({"risk_score": risk_score})
+        risk_breakdown = get_portfolio_risk_breakdown(portfolio)
+        return jsonify({"risk_score": risk_score, "risk_breakdown": risk_breakdown})
 
     @app.route("/api/portfolio/risk-types", methods=["POST"])
     def portfolio_risk_types():
@@ -118,8 +129,12 @@ def register_routes(app):
         if not ticker:
             return jsonify({"error": "Ticker not provided"})
 
-        description = get_recommendation_desc(ticker)
-        return jsonify({"ticker": ticker.upper(), "description": description})
+        result = get_recommendation_desc(ticker)
+        return jsonify({
+            "ticker": ticker.upper(),
+            "description": result["bullets"],
+            "description_details": result["details"],
+        })
 
     # @app.route("/api/episodes")
     # def episodes_search():

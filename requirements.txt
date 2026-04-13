@@ -8,4 +8,5 @@ python-dotenv
 scikit-learn
 numpy
 nltk
+yfinance
 git+https://github.com/MrPeterss/infosci-spark-client.git

@@ -136,6 +136,20 @@
   transition: border-color 0.15s ease, box-shadow 0.15s ease;
 }
 
+.field-block input[type='file'] {
+  width: 100%;
+  border: 1px dashed #cbd5e1;
+  border-radius: 10px;
+  padding: 10px 12px;
+  background: #f8fafc;
+  color: #334155;
+}
+
+.csv-upload-note {
+  color: #64748b;
+  line-height: 1.45;
+}
+
 .field-block textarea:focus,
 .field-block select:focus {
   outline: none;
@@ -303,7 +317,7 @@
   top: calc(100% + 12px);
   right: 0;
   z-index: 20;
-  width: min(320px, calc(100vw - 48px));
+  width: min(420px, calc(100vw - 48px));
   padding: 16px 18px;
   border-radius: 18px;
   background: rgba(18, 31, 24, 0.94);
@@ -335,6 +349,22 @@
   margin-top: 10px;
   color: rgba(239, 247, 241, 0.7);
   font-size: 0.92rem;
+}
+
+.popover-list {
+  margin: 10px 0 0;
+  padding-left: 18px;
+  display: grid;
+  gap: 5px;
+  color: rgba(239, 247, 241, 0.86);
+  font-size: 0.9rem;
+  line-height: 1.45;
+}
+
+.popover-subheading {
+  margin: 8px 0 4px;
+  font-weight: 700;
+  color: #c7ead3;
 }
 
 .tickers-array {
@@ -591,8 +621,25 @@
   color: #1a3d2b;
 }
 
+.modal-title-row {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+}
+
+.modal-title-row h3 {
+  margin: 0;
+}
+
+.modal-ticker-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
 .modal-subtitle {
-  margin-top: 6px;
+  margin: 0;
   color: #60707f;
   font-weight: 600;
 }
@@ -617,14 +664,17 @@
 }
 
 .detail-metric-card {
-  padding: 18px;
+  padding: 14px 18px;
   border-radius: 20px;
   background: #f8fafc;
   border: 1px solid rgba(26, 61, 43, 0.08);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
 }
 
-.detail-metric-card span {
-  display: block;
+.detail-metric-label {
   font-size: 0.8rem;
   font-weight: 700;
   letter-spacing: 0.06em;
@@ -632,35 +682,136 @@
   color: #6a7786;
 }
 
-.detail-metric-card strong {
-  display: block;
-  margin-top: 8px;
+.detail-metric-value {
   font-family: 'Sora', sans-serif;
-  font-size: 1.65rem;
+  font-size: 1.2rem;
+  font-weight: 700;
   color: #1a3d2b;
 }
 
 .detail-section {
-  margin-top: 24px;
+  margin-top: 18px;
 }
 
 .detail-section h4 {
   font-family: 'Sora', sans-serif;
-  font-size: 1rem;
+  font-size: 0.88rem;
   color: #1a3d2b;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  margin-bottom: 6px;
 }
 
 .detail-bullets {
   margin-top: 14px;
+  padding-left: 0;
+  margin-left: 0;
   gap: 12px;
 }
 
 .detail-bullets li {
-  padding: 16px 18px;
+  padding: 14px 16px;
   border-radius: 18px;
   background: rgba(248, 250, 252, 0.96);
   border: 1px solid rgba(26, 61, 43, 0.08);
-  list-style-position: inside;
+  list-style: none;
+  text-align: left;
+}
+
+.risk-bullet-text {
+  display: block;
+  line-height: 1.5;
+  color: #20303f;
+}
+
+.headline-samples {
+  margin: 8px 0 0;
+  padding-left: 16px;
+  display: grid;
+  gap: 4px;
+  list-style: disc;
+}
+
+.headlines-label {
+  font-size: 0.7rem;
+  font-weight: 600;
+  color: #6a7786;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin-top: 6px;
+  margin-bottom: 3px;
+}
+
+.headline-samples li {
+  padding: 0;
+  background: none;
+  border: none;
+  border-radius: 0;
+  font-size: 0.82rem;
+  color: #64748b;
+  line-height: 1.45;
+  list-style: disc;
+}
+
+.formula-breakdown-section {
+  margin-top: 14px;
+}
+
+.formula-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 20px;
+  margin-top: 8px;
+}
+
+.formula-column {
+  display: grid;
+  gap: 6px;
+}
+
+.formula-line {
+  margin: 5px 0;
+  font-size: 0.82rem;
+  color: #334155;
+  line-height: 1.5;
+}
+
+.formula-subheading {
+  margin: 8px 0 2px;
+  font-size: 0.78rem;
+  font-weight: 700;
+  color: #1f4d34;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.formula-parts {
+  margin: 6px 0 0;
+  padding-left: 16px;
+  display: grid;
+  gap: 3px;
+}
+
+.formula-parts li {
+  font-size: 0.82rem;
+  color: #475569;
+  line-height: 1.45;
+}
+
+.similarity-parts {
+  margin-top: 10px;
+}
+
+.definition-list {
+  margin-top: 14px;
+  display: grid;
+  gap: 8px;
+}
+
+.definition-list p {
+  margin: 0;
+  color: #475569;
+  line-height: 1.6;
 }
 
 .meta-line,

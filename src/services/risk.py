@@ -13,20 +13,83 @@ project_root = os.path.dirname(os.path.dirname(current_directory))
 
 
 def get_portfolio_risk_score(user_portfolio):
-    scores = []
-    for ticker in user_portfolio:
-        # double check the proper formatting of the ticker
-        ticker_formatted = ticker.strip().upper()
+    breakdown = get_portfolio_risk_breakdown(user_portfolio)
+    if not breakdown:
+        return 5.0
+    return breakdown["final_score"]
 
-        # obtain the first row that matches the ticker
+
+def get_portfolio_risk_breakdown(user_portfolio):
+    matched_rows = []
+    for ticker in user_portfolio:
+        ticker_formatted = ticker.strip().upper()
         risk_qry = RiskData.query.filter_by(ticker=ticker_formatted).first()
         if risk_qry:
-            scores.append(risk_qry.risk_score_1_10)
+            matched_rows.append(risk_qry)
 
-    # if none of the portfolio stocks are in the S&P 500, return 5.0 risk score
-    if not scores:
-        return 5.0
-    return round(sum(scores) / len(scores), 2)
+    if not matched_rows:
+        return None
+
+    annualized_volatility = float(np.mean([row.annualized_volatility for row in matched_rows]))
+    max_drawdown_abs = float(np.mean([abs(row.max_drawdown) for row in matched_rows]))
+    var_95_abs = float(np.mean([abs(row.var_95) for row in matched_rows]))
+    downside_volatility = float(np.mean([row.downside_volatility for row in matched_rows]))
+    avg_daily_volume = float(np.mean([row.avg_daily_volume for row in matched_rows]))
+
+    weighted_volatility = 0.30 * annualized_volatility
+    weighted_drawdown = 0.25 * max_drawdown_abs
+    weighted_var_95 = 0.20 * var_95_abs
+    weighted_downside = 0.15 * downside_volatility
+    weighted_volume_inverse = 0.10 * (1 / (avg_daily_volume + 1))
+
+    raw_score = (
+        weighted_volatility
+        + weighted_drawdown
+        + weighted_var_95
+        + weighted_downside
+        + weighted_volume_inverse
+    )
+
+    all_rows = RiskData.query.all()
+    min_raw_score = min((float(row.raw_risk_score) for row in all_rows), default=0.0)
+    max_raw_score = max((float(row.raw_risk_score) for row in all_rows), default=0.0)
+
+    denominator = max_raw_score - min_raw_score
+    if denominator > 0:
+        normalized_score = 1 + 9 * ((raw_score - min_raw_score) / denominator)
+    else:
+        normalized_score = 5.0
+
+    return {
+        "weights": {
+            "annualized_volatility": 0.30,
+            "max_drawdown": 0.25,
+            "var_95": 0.20,
+            "downside_volatility": 0.15,
+            "avg_daily_volume_inverse": 0.10,
+        },
+        "components": {
+            "annualized_volatility": annualized_volatility,
+            "max_drawdown_abs": max_drawdown_abs,
+            "var_95_abs": var_95_abs,
+            "downside_volatility": downside_volatility,
+            "avg_daily_volume": avg_daily_volume,
+            "avg_daily_volume_inverse": 1 / (avg_daily_volume + 1),
+        },
+        "weighted_components": {
+            "annualized_volatility": weighted_volatility,
+            "max_drawdown": weighted_drawdown,
+            "var_95": weighted_var_95,
+            "downside_volatility": weighted_downside,
+            "avg_daily_volume_inverse": weighted_volume_inverse,
+        },
+        "raw_score": raw_score,
+        "min_raw_score": min_raw_score,
+        "max_raw_score": max_raw_score,
+        "normalized_score": normalized_score,
+        "final_score": round(normalized_score, 2),
+        "matched_tickers": [row.ticker for row in matched_rows],
+    }
 
 
 def get_portfolio_risk_types(

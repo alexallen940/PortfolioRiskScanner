@@ -1,6 +1,6 @@
-import { FormEvent, useEffect, useState } from 'react'
+import { ChangeEvent, FormEvent, useEffect, useState } from 'react'
 import './App.css'
-import { Recommendation, ScanResponse } from './types'
+import { DescriptionDetail, PortfolioRiskBreakdown, Recommendation, RiskScoreBreakdown, ScanResponse, SimilarityExplanation } from './types'
 
 function StockLogo({ ticker, companyName, logoUrl }: { ticker: string; companyName?: string; logoUrl?: string }): JSX.Element {
   const [hasImageError, setHasImageError] = useState(false)
@@ -31,6 +31,69 @@ function parseTickers(input: string): string[] {
   )
 }
 
+function parseCsvLine(line: string): string[] {
+  const cells: string[] = []
+  let current = ''
+  let inQuotes = false
+
+  for (let i = 0; i < line.length; i += 1) {
+    const char = line[i]
+
+    if (char === '"') {
+      const nextChar = line[i + 1]
+      if (inQuotes && nextChar === '"') {
+        current += '"'
+        i += 1
+      } else {
+        inQuotes = !inQuotes
+      }
+      continue
+    }
+
+    if (char === ',' && !inQuotes) {
+      cells.push(current.trim())
+      current = ''
+      continue
+    }
+
+    current += char
+  }
+
+  cells.push(current.trim())
+  return cells
+}
+
+function parseTickersFromCsv(content: string): string[] {
+  const lines = content
+    .split(/\r?\n/)
+    .map(line => line.trim())
+    .filter(Boolean)
+
+  if (lines.length === 0) {
+    return []
+  }
+
+  const headerCells = parseCsvLine(lines[0]).map(cell => cell.toLowerCase())
+  const tickerColumnIndex = headerCells.findIndex(cell => ['ticker', 'symbol', 'stock', 'stocks'].includes(cell))
+
+  const startRow = tickerColumnIndex >= 0 ? 1 : 0
+  const tickers = new Set<string>()
+
+  for (let i = startRow; i < lines.length; i += 1) {
+    const cells = parseCsvLine(lines[i])
+    if (tickerColumnIndex >= 0) {
+      const token = cells[tickerColumnIndex] ?? ''
+      parseTickers(token).forEach(ticker => tickers.add(ticker))
+    } else {
+      cells.forEach(token => {
+        parseTickers(token).forEach(ticker => tickers.add(ticker))
+      })
+    }
+  }
+
+  return Array.from(tickers)
+}
+
 async function postJson<T>(url: string, payload: object): Promise<T> {
   const response = await fetch(url, {
     method: 'POST',
@@ -50,10 +113,10 @@ async function fetchRecommendationDescriptions(recommendations: Recommendation[]
   const withDescriptions = await Promise.all(
     recommendations.map(async recommendation => {
       try {
-        const data = await postJson<{ description: string[] }>('/api/portfolio/recommendation-description', {
+        const data = await postJson<{ description: string[]; description_details?: DescriptionDetail[] }>('/api/portfolio/recommendation-description', {
           ticker: recommendation.ticker,
         })
-        return { ...recommendation, description: data.description }
+        return { ...recommendation, description: data.description, descriptionDetails: data.description_details }
       } catch {
         return recommendation
       }
@@ -63,10 +126,31 @@ async function fetchRecommendationDescriptions(recommendations: Recommendation[]
   return withDescriptions
 }
 
+function formatNumber(value: number | undefined, digits = 4): string {
+  if (value === undefined || Number.isNaN(value)) {
+    return 'N/A'
+  }
+  return value.toFixed(digits)
+}
+
+function formatWeight(weight: number): string {
+  return weight.toFixed(2)
+}
+
+function queryWeightLabel(level: 'low' | 'medium' | 'high'): string {
+  if (level === 'low') return 'Low (110)'
+  if (level === 'high') return 'High (200)'
+  return 'Medium (150)'
+}
+
 function App(): JSX.Element {
   const [portfolioInput, setPortfolioInput] = useState('')
   const [queryInput, setQueryInput] = useState('')
+  const [queryWeightLevel, setQueryWeightLevel] = useState<'low' | 'medium' | 'high'>('medium')
   const [validationMessage, setValidationMessage] = useState('')
+  const [csvTickers, setCsvTickers] = useState<string[]>([])
+  const [csvFileName, setCsvFileName] = useState('')
+  const [csvLoadMessage, setCsvLoadMessage] = useState('')
   const [results, setResults] = useState<ScanResponse | null>(null)
   const [isLoading, setIsLoading] = useState(false)
   const [selectedRecommendation, setSelectedRecommendation] = useState<Recommendation | null>(null)
@@ -84,12 +168,40 @@ function App(): JSX.Element {
     return () => window.removeEventListener('keydown', handleKeyDown)
   }, [])
 
+  const handleCsvUpload = async (event: ChangeEvent<HTMLInputElement>): Promise<void> => {
+    const file = event.target.files?.[0]
+
+    if (!file) {
+      setCsvTickers([])
+      setCsvFileName('')
+      setCsvLoadMessage('')
+      return
+    }
+
+    try {
+      const content = await file.text()
+      const parsedFromCsv = parseTickersFromCsv(content)
+      setCsvTickers(parsedFromCsv)
+      setCsvFileName(file.name)
+
+      if (parsedFromCsv.length === 0) {
+        setCsvLoadMessage('CSV loaded, but no valid tickers were found.')
+      } else {
+        setCsvLoadMessage(`Loaded ${parsedFromCsv.length} tickers from ${file.name}.`)
+      }
+    } catch {
+      setCsvTickers([])
+      setCsvFileName(file.name)
+      setCsvLoadMessage('Unable to read this CSV file.')
+    }
+  }
+
   const handleSubmit = async (event: FormEvent<HTMLFormElement>): Promise<void> => {
     event.preventDefault()
-    const parsedPortfolio = parseTickers(portfolioInput)
+    const parsedPortfolio = Array.from(new Set([...parseTickers(portfolioInput), ...csvTickers]))
 
     if (parsedPortfolio.length === 0) {
-      setValidationMessage('Enter at least one stock ticker using commas, spaces, or new lines.')
+      setValidationMessage('Enter at least one stock ticker in the textbox or upload a CSV file.')
       setResults(null)
       return
     }
@@ -105,18 +217,33 @@ function App(): JSX.Element {
 
     try {
       const [riskScoreData, riskTypesData, recsData] = await Promise.all([
-        postJson<{ risk_score: number }>('/api/portfolio/risk-score', { portfolio: parsedPortfolio }),
+        postJson<{ risk_score: number; risk_breakdown?: PortfolioRiskBreakdown }>('/api/portfolio/risk-score', {
+          portfolio: parsedPortfolio,
+        }),
         postJson<{ risk_types: string[] }>('/api/portfolio/risk-types', { portfolio: parsedPortfolio }),
-        postJson<{ recommendations: Array<{ ticker: string; similarity: number }> }>('/api/portfolio/recommendations', {
+        postJson<{
+          recommendations: Array<{
+            ticker: string
+            similarity: number
+            similarity_explanation?: SimilarityExplanation
+            risk_score?: number
+            risk_breakdown?: RiskScoreBreakdown
+            company_name?: string
+            logo_url?: string
+          }>
+        }>('/api/portfolio/recommendations', {
           desired_characteristics: queryInput.trim(),
           portfolio: parsedPortfolio,
+          query_weight_level: queryWeightLevel,
         }),
       ])
 
       const baseRecommendations: Recommendation[] = recsData.recommendations.slice(0, 4).map(rec => ({
         ticker: rec.ticker,
         similarity: rec.similarity,
+        similarityExplanation: rec.similarity_explanation,
         riskScore: rec.risk_score,
+        riskBreakdown: rec.risk_breakdown,
         companyName: rec.company_name,
         logoUrl: rec.logo_url,
       }))
@@ -125,6 +252,7 @@ function App(): JSX.Element {
 
       const response: ScanResponse = {
         baseRiskScore: riskScoreData.risk_score,
+        portfolioRiskBreakdown: riskScoreData.risk_breakdown,
         riskTypes: Array.from(new Set(riskTypesData.risk_types)).slice(0, 5),
         summary: `Generated ${recommendations.length} recommendations for ${parsedPortfolio.length} holdings. Query context: ${queryInput.trim()}`,
         recommendations,
@@ -155,7 +283,7 @@ function App(): JSX.Element {
         <form className="control-panel" onSubmit={handleSubmit}>
           <div className="panel-header">
             <h2>Search Inputs</h2>
-            <p>Use tickers only for the portfolio. Describe the risk profile, industry, or concerns in plain language.</p>
+            <p>Provide a list of your portfolio tickers using the portfolio text box and/or a CSV file. </p>
           </div>
 
           <label className="field-block" htmlFor="portfolio-input">
@@ -169,7 +297,15 @@ function App(): JSX.Element {
             />
           </label>
 
+          <label className="field-block" htmlFor="portfolio-csv-input">
+            <span>Portfolio CSV</span>
+            <input id="portfolio-csv-input" type="file" accept=".csv,text/csv" onChange={handleCsvUpload} />
+            {csvLoadMessage && <small className="csv-upload-note">{csvLoadMessage}</small>}
+            {csvFileName && <small className="csv-upload-note">Using file: {csvFileName}</small>}
+          </label>
+
           <label className="field-block" htmlFor="query-input">
+            <p>Describe the risk profile, industry, or other characteristics in plain language.</p>
             <span>Desired stock characteristics</span>
             <textarea
               id="query-input"
@@ -178,6 +314,22 @@ function App(): JSX.Element {
               placeholder="Example: I want lower-volatility healthcare or tech stocks with moderate risk and sensitivity to regulation."
               rows={6}
             />
+          </label>
+
+          <label className="field-block" htmlFor="query-weight-level">
+            <span>Free-text query weighting</span>
+            <select
+              id="query-weight-level"
+              value={queryWeightLevel}
+              onChange={event => setQueryWeightLevel(event.target.value as 'low' | 'medium' | 'high')}
+            >
+              <option value="low">Low (110)</option>
+              <option value="medium">Medium (150)</option>
+              <option value="high">High (200)</option>
+            </select>
+            <small className="csv-upload-note">
+              Controls how strongly your stock characteristics description influences matching.
+            </small>
           </label>
 
           <button className="submit-button" type="submit" disabled={isLoading}>
@@ -216,9 +368,36 @@ function App(): JSX.Element {
                     </button>
                     {isFormulaOpen && (
                       <div className="info-popover formula-popover" role="dialog" aria-label="Risk score formula details">
-                        <p className="popover-kicker">Formula preview</p>
-                        <p>Add your risk-score formula here.</p>
-                        <p className="popover-note">This pop-up supports hover and click so you can swap in the final methodology later.</p>
+                        <p className="popover-kicker">Portfolio risk score calculation</p>
+                        <p className="popover-subheading">General formula</p>
+                        <p>
+                          Raw Risk Score = 0.30(AV) + 0.25(MDD) + 0.20(VaR) + 0.15(DV) + 0.10*(1/(ADV+1))
+                        </p>
+                        <p>Final risk score is the raw risk score normalized to a 10 scale and rounded to 2 decimal places.</p>
+
+                        {results.portfolioRiskBreakdown ? (
+                          <>
+                            <p className="popover-subheading">Your portfolio values</p>
+                            <p className="popover-note">Matched tickers: {results.portfolioRiskBreakdown.matched_tickers.join(', ') || 'None'}</p>
+                            <p>
+                              Raw Risk Score = {formatWeight(results.portfolioRiskBreakdown.weights.annualized_volatility)}*{formatNumber(results.portfolioRiskBreakdown.components.annualized_volatility)} + {formatWeight(results.portfolioRiskBreakdown.weights.max_drawdown)}*{formatNumber(results.portfolioRiskBreakdown.components.max_drawdown_abs)} + {formatWeight(results.portfolioRiskBreakdown.weights.var_95)}*{formatNumber(results.portfolioRiskBreakdown.components.var_95_abs)} + {formatWeight(results.portfolioRiskBreakdown.weights.downside_volatility)}*{formatNumber(results.portfolioRiskBreakdown.components.downside_volatility)} + {formatWeight(results.portfolioRiskBreakdown.weights.avg_daily_volume_inverse)}*{formatNumber(results.portfolioRiskBreakdown.components.avg_daily_volume_inverse, 8)} = <strong>{formatNumber(results.portfolioRiskBreakdown.raw_score, 6)}</strong>
+                            </p>
+                            <p>
+                              Final Risk Score = <strong>{results.baseRiskScore.toFixed(2)}</strong>
+                            </p>
+
+                          </>
+                        ) : (
+                          <p>No portfolio risk breakdown available yet.</p>
+                        )}
+                        <p className="popover-subheading">Formula terms</p>
+                        <ul className="popover-list">
+                          <li>AV: annualized volatility, a measure of risk based on historical price fluctuations.</li>
+                          <li>MDD: maximum drawdown, largest peak-to-trough decline before a new peak.</li>
+                          <li>VaR (95%): expected worst loss with 95% confidence.</li>
+                          <li>DV: downside volatility, volatility of returns below target.</li>
+                          <li>ADV: average daily trading volume, used as liquidity proxy.</li>
+                        </ul>
                       </div>
                     )}
                   </span>
@@ -281,8 +460,17 @@ function App(): JSX.Element {
             <div className="detail-modal-header">
               <div>
                 <p className="modal-kicker">Suggestion detail</p>
-                <h3 id="recommendation-title">{selectedRecommendation.companyName ?? selectedRecommendation.ticker}</h3>
-                <p className="modal-subtitle">{selectedRecommendation.ticker}</p>
+                <div className="modal-title-row">
+                  <h3 id="recommendation-title">{selectedRecommendation.companyName ?? selectedRecommendation.ticker}</h3>
+                  <div className="modal-ticker-row">
+                    <StockLogo
+                      ticker={selectedRecommendation.ticker}
+                      companyName={selectedRecommendation.companyName}
+                      logoUrl={selectedRecommendation.logoUrl}
+                    />
+                    <p className="modal-subtitle">{selectedRecommendation.ticker}</p>
+                  </div>
+                </div>
               </div>
               <button
                 type="button"
@@ -296,23 +484,119 @@ function App(): JSX.Element {
 
             <div className="detail-metrics">
               <div className="detail-metric-card">
-                <span>Risk score</span>
-                <strong>{selectedRecommendation.riskScore !== undefined ? `${selectedRecommendation.riskScore.toFixed(1)}/10` : 'N/A'}</strong>
+                <span className="detail-metric-label">Risk score</span>
+                <span className="detail-metric-value">{selectedRecommendation.riskScore !== undefined ? `${selectedRecommendation.riskScore.toFixed(1)}/10` : 'N/A'}</span>
               </div>
               <div className="detail-metric-card">
-                <span>Similarity</span>
-                <strong>{(selectedRecommendation.similarity * 100).toFixed(1)}%</strong>
+                <span className="detail-metric-label">Similarity</span>
+                <span className="detail-metric-value">{(selectedRecommendation.similarity * 100).toFixed(1)}%</span>
               </div>
             </div>
 
             <div className="detail-section">
               <h4>Risk signal notes</h4>
               <ul className="signal-bullets detail-bullets">
-                {(selectedRecommendation.description ?? ['No risk summary available yet.']).map((bullet, bulletIndex) => (
-                  <li key={`${selectedRecommendation.ticker}-${bulletIndex}`}>{bullet}</li>
-                ))}
+                {selectedRecommendation.descriptionDetails?.length ? (
+                  selectedRecommendation.descriptionDetails.map((detail, bulletIndex) => (
+                    <li key={`${selectedRecommendation.ticker}-detail-${bulletIndex}`}>
+                      <span className="risk-bullet-text">{detail.bullet}</span>
+                      {detail.headlines.length > 0 && (
+                        <>
+                          <div className="headlines-label">Relevant headlines:</div>
+                          <ul className="headline-samples">
+                            {detail.headlines.map((hl, hlIndex) => (
+                              <li key={`${selectedRecommendation.ticker}-hl-${bulletIndex}-${hlIndex}`}>{hl}</li>
+                            ))}
+                          </ul>
+                        </>
+                      )}
+                    </li>
+                  ))
+                ) : (
+                  (selectedRecommendation.description ?? ['No risk summary available yet.']).map((bullet, bulletIndex) => (
+                    <li key={`${selectedRecommendation.ticker}-${bulletIndex}`}>{bullet}</li>
+                  ))
+                )}
               </ul>
             </div>
+
+            <div className="detail-section">
+              <h4>Similarity score calculation</h4>
+              <p className="formula-line">
+                Similarity is cosine similarity between your weighted query and this stock profile. Weights used in this run: portfolio ={' '}
+                <strong>{selectedRecommendation.similarityExplanation?.portfolio_weight ?? 1}</strong>, free-text query ={' '}
+                <strong>{selectedRecommendation.similarityExplanation?.text_weight ?? 150}</strong>
+                {' '}({queryWeightLabel((selectedRecommendation.similarityExplanation?.text_weight_level as 'low' | 'medium' | 'high') || 'medium')}).
+              </p>
+              {selectedRecommendation.similarityExplanation && (
+                <>
+                  <p className="formula-line">
+                    Formula: similarity = dot(query, stock) / (||query|| x ||stock||)
+                  </p>
+                  <p className="formula-line">
+                    Filled values: {formatNumber(selectedRecommendation.similarityExplanation.dot_product, 6)} / ({formatNumber(selectedRecommendation.similarityExplanation.query_norm, 6)} x {formatNumber(selectedRecommendation.similarityExplanation.stock_norm, 6)}) ={' '}
+                    <strong>{formatNumber(selectedRecommendation.similarityExplanation.similarity_score, 6)}</strong>
+                  </p>
+                </>
+              )}
+              {selectedRecommendation.similarityExplanation?.top_drivers?.length ? (
+                <ul className="formula-parts similarity-parts">
+                  {selectedRecommendation.similarityExplanation.top_drivers.slice(0, 3).map((driver, driverIndex) => (
+                    <li key={`${selectedRecommendation.ticker}-driver-${driverIndex}`}>
+                      {driver.term ? (
+                        <>
+                          Shared term <strong>{driver.term}</strong> contributed <strong>{formatNumber(driver.contribution, 6)}</strong>
+                        </>
+                      ) : (
+                        <>
+                          <strong>{driver.label ?? `Latent dimension ${driver.dimension}`}</strong> ({`dimension ${driver.dimension}`}) contributed <strong>{formatNumber(driver.contribution, 6)}</strong> (query {formatNumber(driver.query_value, 4)} x stock {formatNumber(driver.stock_value, 4)})
+                          {driver.relationship ? ` | Relationship: ${driver.relationship}` : ''}
+                          {driver.top_positive_terms?.length ? ` | Positive terms: ${driver.top_positive_terms.join(', ')}` : ''}
+                          {driver.top_negative_terms?.length ? ` | Negative terms: ${driver.top_negative_terms.join(', ')}` : ''}
+                        </>
+                      )}
+                    </li>
+                  ))}
+                </ul>
+              ) : (
+                <p className="formula-line">No term-level similarity drivers were available for this recommendation.</p>
+              )}
+            </div>
+
+            {selectedRecommendation.riskBreakdown && (
+              <div className="detail-section formula-breakdown-section">
+                <h4>Risk score calculation</h4>
+                <div className="formula-grid">
+                  <div className="formula-column">
+                    <p className="formula-subheading">General formula</p>
+                    <p className="formula-line">
+                      Raw Risk Score = 0.30(AV) + 0.25(MDD) + 0.20(VaR) + 0.15(DV) + 0.10*(1/(ADV+1))
+                    </p>
+                    <p className="formula-line">
+                      Final risk score is the raw risk score normalized to a 10 scale and rounded to 2 decimal places.
+                    </p>
+                  </div>
+                  <div className="formula-column">
+                    <p className="formula-subheading">This suggestion&apos;s values</p>
+                    <p className="formula-line">
+                      Raw Risk Score = {formatWeight(selectedRecommendation.riskBreakdown.weights.annualized_volatility)}*{formatNumber(selectedRecommendation.riskBreakdown.components.annualized_volatility)} + {formatWeight(selectedRecommendation.riskBreakdown.weights.max_drawdown)}*{formatNumber(selectedRecommendation.riskBreakdown.components.max_drawdown_abs)} + {formatWeight(selectedRecommendation.riskBreakdown.weights.var_95)}*{formatNumber(selectedRecommendation.riskBreakdown.components.var_95_abs)} + {formatWeight(selectedRecommendation.riskBreakdown.weights.downside_volatility)}*{formatNumber(selectedRecommendation.riskBreakdown.components.downside_volatility)} + {formatWeight(selectedRecommendation.riskBreakdown.weights.avg_daily_volume_inverse)}*{formatNumber(selectedRecommendation.riskBreakdown.components.avg_daily_volume_inverse, 8)} = <strong>{formatNumber(selectedRecommendation.riskBreakdown.raw_score_from_formula, 6)}</strong>
+                    </p>
+                    <p className="formula-line">
+                      Final Risk Score = <strong>{selectedRecommendation.riskBreakdown.normalized_score.toFixed(2)}</strong>
+                    </p>
+                  </div>
+                </div>
+
+                <p className="formula-subheading">Formula terms</p>
+                <ul className="formula-parts">
+                  <li>AV: annualized volatility, a measure of risk based on historical price fluctuations.</li>
+                  <li>MDD: maximum drawdown, largest peak-to-trough decline before a new peak.</li>
+                  <li>VaR (95%): expected worst loss with 95% confidence.</li>
+                  <li>DV: downside volatility, volatility of returns below target.</li>
+                  <li>ADV: average daily trading volume, used as liquidity proxy.</li>
+                </ul>
+              </div>
+            )}
           </section>
         </div>
       )}
