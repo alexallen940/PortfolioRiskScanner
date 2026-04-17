@@ -107,8 +107,8 @@ def _load_company_metadata_from_dataset():
                 continue
 
             company_name = (
-                (row.get("company_name") or row.get("Security") or row.get("security") or "").strip() or ticker
-            )
+                row.get("company_name") or row.get("Security") or row.get("security") or ""
+            ).strip() or ticker
             logo_url = (row.get("logo_url") or "").strip() or None
 
             # Optional: logo_domain supports Apistemic logos API generation.
@@ -268,11 +268,7 @@ def _build_risk_breakdown(risk_row, min_raw_score, max_raw_score):
     weighted_volume_inverse = 0.10 * (1 / (avg_daily_volume + 1))
 
     raw_score_formula = (
-        weighted_volatility
-        + weighted_drawdown
-        + weighted_var_95
-        + weighted_downside
-        + weighted_volume_inverse
+        weighted_volatility + weighted_drawdown + weighted_var_95 + weighted_downside + weighted_volume_inverse
     )
 
     denominator = max_raw_score - min_raw_score
@@ -646,18 +642,20 @@ def get_recommendation_desc(ticker, max_articles=25):
             keyword_text = " and ".join(keywords)
             # First bullet includes news reference, subsequent ones don't
             if i == 0:
-                bullet = f"{risk} due to {keyword_text} risk signals in recent news coverage"
+                bullet = f"{risk} due to {keyword_text} risk signals"
             else:
                 bullet = f"{risk} due to {keyword_text} risk signals"
         else:
             if i == 0:
-                bullet = f"Susceptible to {risk} based on recent news coverage."
+                bullet = f"Susceptible to {risk}"
             else:
-                bullet = f"Susceptible to {risk}."
+                bullet = f"Susceptible to {risk}"
         bullets.append(bullet)
-        details.append({
-            "bullet": bullet,
-            "headlines": headline_hits.get(risk, []),
-        })
+        details.append(
+            {
+                "bullet": bullet,
+                "headlines": headline_hits.get(risk, []),
+            }
+        )
 
     return {"bullets": bullets, "details": details}
