@@ -231,6 +231,11 @@ function App(): JSX.Element {
             company_name?: string
             logo_url?: string
           }>
+          query_interpretation?: {
+            original: string
+            interpreted: string
+            corrections: Record<string, string>
+          }
         }>('/api/portfolio/recommendations', {
           desired_characteristics: queryInput.trim(),
           portfolio: parsedPortfolio,
@@ -256,6 +261,7 @@ function App(): JSX.Element {
         riskTypes: Array.from(new Set(riskTypesData.risk_types)).slice(0, 5),
         summary: `Generated ${recommendations.length} recommendations for ${parsedPortfolio.length} holdings. Query context: ${queryInput.trim()}`,
         recommendations,
+        queryInterpretation: recsData.query_interpretation,
       }
 
       setResults(response)
@@ -283,7 +289,7 @@ function App(): JSX.Element {
         <form className="control-panel" onSubmit={handleSubmit}>
           <div className="panel-header">
             <h2>Search Inputs</h2>
-            <p>Provide a list of your portfolio tickers using the portfolio text box and/or a CSV file. </p>
+            <p>Provide a list of your portfolio tickers using the portfolio text box (separated by commas) and/or a CSV file (separated by whitespace, commas, or cells, though a ticker column would be optimal). All inputted tickers will be included. </p>
           </div>
 
           <label className="field-block" htmlFor="portfolio-input">
@@ -346,6 +352,11 @@ function App(): JSX.Element {
 
           {results && (
             <>
+              {results.queryInterpretation && Object.keys(results.queryInterpretation.corrections).length > 0 && (
+                <p className="query-interpretation-note">
+                  Interpreted query: <strong>{results.queryInterpretation.interpreted}</strong>
+                </p>
+              )}
               <div className="risk-score-section">
                 <p className="risk-score-line">
                   <strong className="report-label">Portfolio Risk Score:</strong>
@@ -505,7 +516,15 @@ function App(): JSX.Element {
                           <div className="headlines-label">Relevant headlines:</div>
                           <ul className="headline-samples">
                             {detail.headlines.map((hl, hlIndex) => (
-                              <li key={`${selectedRecommendation.ticker}-hl-${bulletIndex}-${hlIndex}`}>{hl}</li>
+                              <li key={`${selectedRecommendation.ticker}-hl-${bulletIndex}-${hlIndex}`}>
+                                {hl.url ? (
+                                  <a href={hl.url} target="_blank" rel="noopener noreferrer">
+                                    {hl.title}
+                                  </a>
+                                ) : (
+                                  hl.title
+                                )}
+                              </li>
                             ))}
                           </ul>
                         </>
@@ -545,11 +564,13 @@ function App(): JSX.Element {
                     <li key={`${selectedRecommendation.ticker}-driver-${driverIndex}`}>
                       {driver.term ? (
                         <>
-                          Shared term <strong>{driver.term}</strong> contributed <strong>{formatNumber(driver.contribution, 6)}</strong>
+                          Shared term <strong>{driver.term}</strong>
+                          {/* contributed <strong>{formatNumber(driver.contribution, 6)}</strong> */}
                         </>
                       ) : (
                         <>
-                          <strong>{driver.label ?? `Latent dimension ${driver.dimension}`}</strong> ({`dimension ${driver.dimension}`}) contributed <strong>{formatNumber(driver.contribution, 6)}</strong> (query {formatNumber(driver.query_value, 4)} x stock {formatNumber(driver.stock_value, 4)})
+                          <strong>{driver.label ?? `Latent dimension ${driver.dimension}`}</strong> ({`dimension ${driver.dimension}`})
+                          {/* contributed <strong>{formatNumber(driver.contribution, 6)}</strong> (query {formatNumber(driver.query_value, 4)} x stock {formatNumber(driver.stock_value, 4)}) */}
                           {driver.relationship ? ` | Relationship: ${driver.relationship}` : ''}
                           {driver.top_positive_terms?.length ? ` | Positive terms: ${driver.top_positive_terms.join(', ')}` : ''}
                           {driver.top_negative_terms?.length ? ` | Negative terms: ${driver.top_negative_terms.join(', ')}` : ''}

@@ -214,6 +214,21 @@
   background: linear-gradient(180deg, rgba(255, 255, 255, 0.88), rgba(252, 250, 246, 0.9));
 }
 
+.query-interpretation-note {
+  margin: 12px 0 0;
+  padding: 10px 12px;
+  border-radius: 10px;
+  border: 1px solid rgba(45, 122, 79, 0.22);
+  background: rgba(45, 122, 79, 0.08);
+  color: #1f3b2d;
+  font-size: 0.93rem;
+  line-height: 1.45;
+}
+
+.query-interpretation-note strong {
+  font-weight: 700;
+}
+
 .risk-score-section {
   margin-top: 10px;
   display: grid;

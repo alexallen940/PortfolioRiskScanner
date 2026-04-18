@@ -1,5 +1,6 @@
 import csv
 import re
+import difflib
 from urllib.parse import urlparse
 from collections import Counter
 import numpy as np
@@ -150,6 +151,25 @@ def _load_company_metadata_from_articles():
     return metadata
 
 
+def _load_article_link_lookup():
+    article_links = {}
+
+    if not os.path.exists(articles_csv_path):
+        return article_links
+
+    with open(articles_csv_path, "r") as file:
+        reader = csv.DictReader(file)
+        for row in reader:
+            ticker = (row.get("ticker") or "").strip().upper()
+            headline = (row.get("headline") or "").strip()
+            url = (row.get("url") or "").strip() or None
+
+            if ticker and headline and url:
+                article_links[(ticker, headline)] = url
+
+    return article_links
+
+
 def _load_company_metadata():
     dataset_metadata = _load_company_metadata_from_dataset()
 
@@ -167,6 +187,36 @@ def _load_company_metadata():
 
 COMPANY_METADATA = _load_company_metadata()
 YFINANCE_METADATA_CACHE = {}
+ARTICLE_LINK_LOOKUP = _load_article_link_lookup()
+
+
+def _fuzzy_correct_query_text(query_text, unigram_features, min_length=4, cutoff=0.84):
+    if not query_text:
+        return "", {}
+
+    feature_set = set(unigram_features)
+    corrections = {}
+
+    def _replace(match):
+        token = match.group(0)
+        lower = token.lower()
+
+        if len(lower) < min_length or lower in feature_set:
+            return token
+
+        close_match = difflib.get_close_matches(lower, unigram_features, n=1, cutoff=cutoff)
+        if not close_match:
+            return token
+
+        corrected = close_match[0]
+        if corrected == lower:
+            return token
+
+        corrections[token] = corrected
+        return corrected
+
+    corrected_query = re.sub(r"\b[A-Za-z][A-Za-z']+\b", _replace, query_text)
+    return corrected_query, corrections
 
 
 def _website_to_domain(website):
@@ -459,8 +509,11 @@ def get_stock_recommendations(
         if ticker in ticker_docs:
             portfolio_texts.append(ticker_docs[ticker])
 
+    unigram_features = [feature for feature in vectorizer.get_feature_names_out() if "_" not in feature]
+    corrected_characteristics, query_corrections = _fuzzy_correct_query_text(desired_characteristics, unigram_features)
+
     # free text query
-    characteristics_doc = protect_bigrams(desired_characteristics, protected=PROTECTED_WORDS["extra_words"])
+    characteristics_doc = protect_bigrams(corrected_characteristics, protected=PROTECTED_WORDS["extra_words"])
     characteristics_doc = characteristics_doc.replace('"', "").replace("-", " ").lower().strip()
 
     # case when no valid portfolio tickers or free text query were found
@@ -549,7 +602,14 @@ def get_stock_recommendations(
     top_results = results[:top_k]
     top_results = _enrich_with_yfinance(top_results)
 
-    return top_results
+    return {
+        "recommendations": top_results,
+        "query_interpretation": {
+            "original": desired_characteristics,
+            "interpreted": corrected_characteristics,
+            "corrections": query_corrections,
+        },
+    }
 
 
 def explain_recommendation(idx, q=[], d=[], tickers=[], vectorizer=None, svd=None, top_k_dims=3):
@@ -586,9 +646,11 @@ def explain_recommendation(idx, q=[], d=[], tickers=[], vectorizer=None, svd=Non
 
 
 def get_recommendation_desc(ticker, max_articles=25):
+    normalized_ticker = ticker.upper().strip()
+
     # take 'max_articles' number of most recent articles for ticker
     articles = (
-        Article.query.filter_by(ticker=ticker.upper().strip()).order_by(Article.id.desc()).limit(max_articles).all()
+        Article.query.filter_by(ticker=normalized_ticker).order_by(Article.id.desc()).limit(max_articles).all()
     )
 
     # counts number of times each risk signal appears
@@ -617,7 +679,12 @@ def get_recommendation_desc(ticker, max_articles=25):
             if risk_type not in headline_hits:
                 headline_hits[risk_type] = []
             if len(headline_hits[risk_type]) < 3:
-                headline_hits[risk_type].append(article.headline)
+                headline_hits[risk_type].append(
+                    {
+                        "title": article.headline,
+                        "url": ARTICLE_LINK_LOOKUP.get((normalized_ticker, article.headline)),
+                    }
+                )
 
     # the case where no keywords match
     if not risk_counts:

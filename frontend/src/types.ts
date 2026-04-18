@@ -87,7 +87,16 @@ export interface SimilarityExplanation {
 
 export interface DescriptionDetail {
   bullet: string
-  headlines: string[]
+  headlines: Array<{
+    title: string
+    url?: string | null
+  }>
+}
+
+export interface QueryInterpretation {
+  original: string
+  interpreted: string
+  corrections: Record<string, string>
 }
 
 export interface Recommendation {
@@ -108,4 +117,5 @@ export interface ScanResponse {
   riskTypes: string[]
   summary: string
   recommendations: Recommendation[]
+  queryInterpretation?: QueryInterpretation
 }
