@@ -1,6 +1,7 @@
 import json
 import csv
 import os
+import nltk
 from dotenv import load_dotenv
 from flask import Flask
 from datetime import datetime
@@ -8,6 +9,11 @@ from services.risk import get_portfolio_risk_score, get_portfolio_risk_types
 
 
 load_dotenv()
+try:
+    nltk.data.find("sentiment/vader_lexicon.zip")
+except LookupError:
+    nltk.download("vader_lexicon")
+
 from flask_cors import CORS
 from models import db, Article, RiskData
 from routes import register_routes

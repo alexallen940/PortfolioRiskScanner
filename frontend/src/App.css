@@ -283,6 +283,53 @@
   font-size: 1.05rem;
 }
 
+.sentiment-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  margin-top: 6px;
+  padding: 6px 10px;
+  border-radius: 999px;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.sentiment-badge.very-positive,
+.sentiment-badge.positive {
+  background: #dcfce7;
+  color: #166534;
+}
+
+.sentiment-badge.slightly-positive {
+  background: #ecfdf5;
+  color: #047857;
+}
+
+.sentiment-badge.neutral {
+  background: #f1f5f9;
+  color: #475569;
+}
+
+.sentiment-badge.slightly-negative {
+  background: #fff7ed;
+  color: #c2410c;
+}
+
+.sentiment-badge.negative,
+.sentiment-badge.very-negative {
+  background: #fee2e2;
+  color: #991b1b;
+}
+
+.sentiment-detail-line {
+  margin-top: 12px;
+  font-size: 0.9rem;
+  color: #475569;
+  line-height: 1.5;
+}
+
 .report-label {
   font-weight: 700;
 }

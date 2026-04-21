@@ -3,11 +3,14 @@ import re
 import difflib
 from urllib.parse import urlparse
 from collections import Counter
+from infosci_spark_client import LLMClient
 import numpy as np
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.metrics.pairwise import cosine_similarity
+from llm_routes import get_risk_signals_for_tickers, get_ticker_summary, tickers_risk_signals_decision
 from services.svd import get_fitted_svd
 from models import Article, RiskData
+from nltk.sentiment.vader import SentimentIntensityAnalyzer
 import json
 import os
 
@@ -25,17 +28,6 @@ constituents_csv_path = os.path.join(BASE_DIR, "data", "constituents.csv")
 
 with open(json_path, "r") as f:
     RISK_KEYWORDS = json.load(f)
-
-json_path = os.path.join(BASE_DIR, "data", "protected_words.json")
-
-with open(json_path, "r") as f:
-    PROTECTED_WORDS = json.load(f)
-
-
-def protect_bigrams(text, protected):
-    for bigram in protected:
-        text = re.sub(rf"\b{bigram}\b", bigram.replace(" ", "_"), text, flags=re.IGNORECASE)
-    return text
 
 
 GENERIC_NAME_PREFIXES = (
@@ -301,6 +293,81 @@ def _enrich_with_yfinance(results):
     return enriched
 
 
+SENTIMENT_ANALYZER = SentimentIntensityAnalyzer()
+
+
+def get_article_sentiment(text):
+    scores = SENTIMENT_ANALYZER.polarity_scores(text or "")
+    compound = scores["compound"]
+
+    if compound >= 0.05:
+        label = "positive"
+    elif compound <= -0.05:
+        label = "negative"
+    else:
+        label = "neutral"
+
+    return {
+        "label": label,
+        "compound": round(compound, 4),
+        "pos": round(scores["pos"], 4),
+        "neu": round(scores["neu"], 4),
+        "neg": round(scores["neg"], 4),
+    }
+
+
+def get_ticker_sentiment_summary(ticker, max_articles=25):
+    normalized_ticker = ticker.upper().strip()
+
+    articles = Article.query.filter_by(ticker=normalized_ticker).order_by(Article.id.desc()).limit(max_articles).all()
+
+    if not articles:
+        return {
+            "ticker": normalized_ticker,
+            "article_count": 0,
+            "average_compound": 0.0,
+            "label": "neutral",
+            "articles": [],
+        }
+
+    article_sentiments = []
+    for article in articles:
+        text = f"{article.headline}. {article.summary}"
+        sentiment = get_article_sentiment(text)
+
+        article_sentiments.append(
+            {
+                "headline": article.headline,
+                "sentiment": sentiment,
+            }
+        )
+
+    avg_compound = sum(item["sentiment"]["compound"] for item in article_sentiments) / len(article_sentiments)
+
+    if avg_compound >= 0.5:
+        overall_label = "very positive"
+    elif avg_compound >= 0.15:
+        overall_label = "positive"
+    elif avg_compound >= 0.05:
+        overall_label = "slightly positive"
+    elif avg_compound <= -0.5:
+        overall_label = "very negative"
+    elif avg_compound <= -0.15:
+        overall_label = "negative"
+    elif avg_compound <= -0.05:
+        overall_label = "slightly negative"
+    else:
+        overall_label = "neutral"
+
+    return {
+        "ticker": normalized_ticker,
+        "article_count": len(article_sentiments),
+        "average_compound": round(avg_compound, 4),
+        "label": overall_label,
+        "articles": article_sentiments,
+    }
+
+
 def _build_risk_breakdown(risk_row, min_raw_score, max_raw_score):
     if not risk_row:
         return None
@@ -485,7 +552,7 @@ def get_stock_recommendations(
             ticker_docs[article.ticker] = []
 
         # add the article text under that ticker
-        ticker_docs[article.ticker].append(protect_bigrams(text, protected=PROTECTED_WORDS["extra_words"]))
+        ticker_docs[article.ticker].append(text)
 
     # convert lists of article texts into one big doc per ticker
     ticker_docs = {
@@ -513,8 +580,7 @@ def get_stock_recommendations(
     corrected_characteristics, query_corrections = _fuzzy_correct_query_text(desired_characteristics, unigram_features)
 
     # free text query
-    characteristics_doc = protect_bigrams(corrected_characteristics, protected=PROTECTED_WORDS["extra_words"])
-    characteristics_doc = characteristics_doc.replace('"', "").replace("-", " ").lower().strip()
+    characteristics_doc = corrected_characteristics.replace('"', "").replace("-", " ").lower().strip()
 
     # case when no valid portfolio tickers or free text query were found
     if not portfolio_texts and not characteristics_doc:
@@ -539,7 +605,7 @@ def get_stock_recommendations(
         # length 503 (for each stock in the S&P 500's similarity score to portfolio)
         similarities = cosine_similarity(query_repr, doc_repr).flatten()
 
-        print("\n========== SVD SEARCH RESULTS ==========")
+        # print("\n========== SVD SEARCH RESULTS ==========")
 
         # print top results
         sorted_tickers_idx = np.argsort(similarities)[::-1]
@@ -551,9 +617,9 @@ def get_stock_recommendations(
 
         recommendations_ind = recommendations_ind[:4]
 
-        print("\nTop Stock Recommendations:")
-        for idx in recommendations_ind:
-            print(f"{tickers[idx]} -> similarity {similarities[idx]:.4f}")
+        # print("\nTop Stock Recommendations:")
+        # for idx in recommendations_ind:
+        #     print(f"{tickers[idx]} -> similarity {similarities[idx]:.4f}")
 
         q = query_repr.flatten()
 
@@ -600,6 +666,13 @@ def get_stock_recommendations(
 
     results.sort(key=lambda x: x["similarity"], reverse=True)
     top_results = results[:top_k]
+    for item in top_results:
+        sentiment_summary = get_ticker_sentiment_summary(item["ticker"], max_articles=10)
+        item["sentiment"] = {
+            "label": sentiment_summary["label"],
+            "average_compound": sentiment_summary["average_compound"],
+            "article_count": sentiment_summary["article_count"],
+        }
     top_results = _enrich_with_yfinance(top_results)
 
     return {
@@ -614,7 +687,7 @@ def get_stock_recommendations(
 
 def explain_recommendation(idx, q=[], d=[], tickers=[], vectorizer=None, svd=None, top_k_dims=3):
 
-    print(f"\n--- {tickers[idx]} ---")
+    # print(f"\n--- {tickers[idx]} ---")
 
     products = q * d
     top_dims = np.argsort(np.abs(products))[::-1][:top_k_dims]
@@ -636,93 +709,149 @@ def explain_recommendation(idx, q=[], d=[], tickers=[], vectorizer=None, svd=Non
         pos_terms = [feature_names[j] for j in top_pos_idx]
         neg_terms = [feature_names[j] for j in top_neg_idx]
 
-        print(f"\nDimension {dim}")
-        print(f"  Query value: {q[dim]:.4f}")
-        print(f"  Stock value: {d[dim]:.4f}")
-        print(f"  Product: {products[dim]:.4f}")
-        print(f"  Relationship: {relation}")
-        print(f"  Positive terms: {pos_terms}")
-        print(f"  Negative terms: {neg_terms}")
+        # print(f"\nDimension {dim}")
+        # print(f"  Query value: {q[dim]:.4f}")
+        # print(f"  Stock value: {d[dim]:.4f}")
+        # print(f"  Product: {products[dim]:.4f}")
+        # print(f"  Relationship: {relation}")
+        # print(f"  Positive terms: {pos_terms}")
+        # print(f"  Negative terms: {neg_terms}")
 
 
-def get_recommendation_desc(ticker, max_articles=25):
-    normalized_ticker = ticker.upper().strip()
-
-    # take 'max_articles' number of most recent articles for ticker
-    articles = (
-        Article.query.filter_by(ticker=normalized_ticker).order_by(Article.id.desc()).limit(max_articles).all()
-    )
-
-    # counts number of times each risk signal appears
-    risk_counts = Counter()
-
-    # keeps track of which keyword within the risk signal was matched
-    keyword_hits = {}
-
-    # tracks which article headlines matched each risk type (up to 3 per type)
-    headline_hits = {}
-
-    # count keyword matches per article
-    for article in articles:
-        article_text = f"{article.headline} {article.summary}".replace("-", " ").lower()
-        matched_types = set()
-        for risk_type, keywords in RISK_KEYWORDS.items():
-            for keyword in keywords:
-                if re.search(rf"\b{re.escape(keyword)}\b", article_text):
-                    risk_counts[risk_type] += 1
-                    if risk_type not in keyword_hits:
-                        keyword_hits[risk_type] = []
-                    keyword_hits[risk_type].append(keyword)
-                    matched_types.add(risk_type)
-
-        for risk_type in matched_types:
-            if risk_type not in headline_hits:
-                headline_hits[risk_type] = []
-            if len(headline_hits[risk_type]) < 3:
-                headline_hits[risk_type].append(
-                    {
-                        "title": article.headline,
-                        "url": ARTICLE_LINK_LOOKUP.get((normalized_ticker, article.headline)),
-                    }
-                )
-
-    # the case where no keywords match
-    if not risk_counts:
-        no_signal_result = {
-            "bullet": "no apparent risk themes based on recent news. need more info to generate summary.",
-            "headlines": [],
-        }
-        return {
-            "bullets": [no_signal_result["bullet"]],
-            "details": [no_signal_result],
-        }
-
-    # top 2 risk types
-    sort_signals = sorted(risk_counts.items(), key=lambda x: x[1], reverse=True)
-    top_risks = [r for r, _ in sort_signals[:2]]
-
+def get_recommendation_desc(ticker, max_articles=25, use_llm=True, top_k_risk_signals=2, top_k_risk_types=2):
     bullets = []
     details = []
-    for i, risk in enumerate(top_risks):
-        keywords = list(dict.fromkeys(keyword_hits.get(risk, [])))[:2]
-        if keywords:
-            keyword_text = " and ".join(keywords)
-            # First bullet includes news reference, subsequent ones don't
-            if i == 0:
-                bullet = f"{risk} due to {keyword_text} risk signals"
-            else:
-                bullet = f"{risk} due to {keyword_text} risk signals"
-        else:
-            if i == 0:
-                bullet = f"Susceptible to {risk}"
-            else:
-                bullet = f"Susceptible to {risk}"
-        bullets.append(bullet)
-        details.append(
-            {
-                "bullet": bullet,
-                "headlines": headline_hits.get(risk, []),
-            }
+    normalized_ticker = ticker.upper().strip()
+
+    if not use_llm:
+        # take 'max_articles' number of most recent articles for ticker
+        articles = (
+            Article.query.filter_by(ticker=normalized_ticker).order_by(Article.id.desc()).limit(max_articles).all()
         )
+
+        # counts number of times each risk signal appears
+        risk_counts = Counter()
+
+        # keeps track of which keyword within the risk signal was matched
+        keyword_hits = {}
+
+        # tracks which article headlines matched each risk type (up to 3 per type)
+        headline_hits = {}
+
+        # count keyword matches per article
+        for article in articles:
+            article_text = f"{article.headline} {article.summary}".replace("-", " ").lower()
+            matched_types = set()
+            for risk_type, keywords in RISK_KEYWORDS.items():
+                for keyword in keywords:
+                    if re.search(rf"\b{re.escape(keyword)}\b", article_text):
+                        risk_counts[risk_type] += 1
+                        if risk_type not in keyword_hits:
+                            keyword_hits[risk_type] = []
+                        keyword_hits[risk_type].append(keyword)
+                        matched_types.add(risk_type)
+
+            for risk_type in matched_types:
+                if risk_type not in headline_hits:
+                    headline_hits[risk_type] = []
+                if len(headline_hits[risk_type]) < 3:
+                    headline_hits[risk_type].append(
+                        {
+                            "title": article.headline,
+                            "url": ARTICLE_LINK_LOOKUP.get((normalized_ticker, article.headline)),
+                        }
+                    )
+
+        # the case where no keywords match
+        if not risk_counts:
+            no_signal_result = {
+                "bullet": "no apparent risk themes based on recent news. need more info to generate summary.",
+                "headlines": [],
+            }
+            return {
+                "bullets": [no_signal_result["bullet"]],
+                "details": [no_signal_result],
+            }
+
+        # top 2 risk types
+        sort_signals = sorted(risk_counts.items(), key=lambda x: x[1], reverse=True)
+        top_risks = [r for r, _ in sort_signals[:top_k_risk_types]]
+
+        for i, risk in enumerate(top_risks):
+            keywords = list(dict.fromkeys(keyword_hits.get(risk, [])))[:top_k_risk_signals]
+            if keywords:
+                keyword_text = " and ".join(keywords)
+                # First bullet includes news reference, subsequent ones don't
+                if i == 0:
+                    bullet = f"{risk} due to {keyword_text} risk signals"
+                else:
+                    bullet = f"{risk} due to {keyword_text} risk signals"
+            else:
+                if i == 0:
+                    bullet = f"Susceptible to {risk}"
+                else:
+                    bullet = f"Susceptible to {risk}"
+            bullets.append(bullet)
+            details.append(
+                {
+                    "bullet": bullet,
+                    "headlines": headline_hits.get(risk, []),
+                }
+            )
+    else:
+        api_key = os.getenv("SPARK_API_KEY")
+        client = LLMClient(api_key=api_key)
+
+        get_ticker_summary(tickers=[normalized_ticker], client=client)
+
+        data = get_risk_signals_for_tickers(tickers=[normalized_ticker], client=client)
+
+        signals_data = data.get("signals")
+        ticker_docs = data.get("ticker_docs")
+
+        for ticker, risk_types in signals_data.items():
+            docs = ticker_docs.get(ticker)
+            top_risks = sorted(
+                risk_types.items(),
+                key=lambda kv: sum(signal["count"] for signal in kv[1].values()),
+                reverse=True,
+            )[:top_k_risk_types]
+
+            for risk_type, signals in top_risks:
+                if not signals:
+                    continue
+                top_signal_items = sorted(
+                    signals.items(),
+                    key=lambda kv: kv[1]["count"],
+                    reverse=True,
+                )[:top_k_risk_signals]
+
+                signal_names = [signal for signal, _ in top_signal_items]
+                signal_text = " and ".join(signal_names)
+
+                article_indices = []
+                for _, info in top_signal_items:
+                    for i in info.get("article_indices"):
+                        if i not in article_indices:
+                            article_indices.append(i)
+
+                headlines = [
+                    {
+                        "title": docs[i]["headline"],
+                        "url": ARTICLE_LINK_LOOKUP.get((ticker, docs[i]["headline"])),
+                    }
+                    for i in article_indices
+                    if 0 <= i < len(docs) and docs[i].get("headline")
+                ][:3]
+
+                bullet = f"{risk_type} due to {signal_text} risk signals"
+
+                bullets.append(bullet)
+                details.append(
+                    {
+                        "bullet": bullet,
+                        "headlines": headlines,
+                    }
+                )
 
     return {"bullets": bullets, "details": details}

@@ -8,14 +8,14 @@ import csv
 import difflib
 from flask import send_from_directory, request, jsonify
 from models import db, Article, RiskData
-from services.recommender import get_stock_recommendations, get_recommendation_desc
+from services.recommender import get_stock_recommendations, get_recommendation_desc, get_ticker_sentiment_summary
 from services.risk import get_portfolio_risk_score, get_portfolio_risk_types, get_portfolio_risk_breakdown
 from sklearn.feature_extraction.text import TfidfVectorizer
 
 
 # ── AI toggle ────────────────────────────────────────────────────────────────
-USE_LLM = False
-# USE_LLM = True
+# USE_LLM = False
+USE_LLM = True
 # ─────────────────────────────────────────────────────────────────────────────
 
 
@@ -206,11 +206,24 @@ def register_routes(app):
             return jsonify({"error": "Ticker not provided"})
 
         result = get_recommendation_desc(ticker)
-        return jsonify({
-            "ticker": ticker.upper(),
-            "description": result["bullets"],
-            "description_details": result["details"],
-        })
+        return jsonify(
+            {
+                "ticker": ticker.upper(),
+                "description": result["bullets"],
+                "description_details": result["details"],
+            }
+        )
+
+    @app.route("/api/portfolio/recommendation-sentiment", methods=["POST"])
+    def recommendation_sentiment():
+        data = request.get_json() or {}
+        ticker = data.get("ticker", "").strip()
+
+        if not ticker:
+            return jsonify({"error": "Ticker not provided"}), 400
+
+        result = get_ticker_sentiment_summary(ticker)
+        return jsonify(result)
 
     # @app.route("/api/episodes")
     # def episodes_search():
@@ -218,6 +231,6 @@ def register_routes(app):
     #     return jsonify(json_search(text))
 
     if USE_LLM:
-        from llm_routes import register_chat_route
+        from llm_routes import register_chat_route, register_tickers_risk_signals_route
 
         # register_chat_route(app, json_search)

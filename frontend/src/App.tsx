@@ -143,6 +143,30 @@ function queryWeightLabel(level: 'low' | 'medium' | 'high'): string {
   return 'Medium (150)'
 }
 
+function sentimentBadgeClass(label?: string): string {
+  switch (label) {
+    case 'very positive':
+      return 'sentiment-badge very-positive'
+    case 'positive':
+      return 'sentiment-badge positive'
+    case 'slightly positive':
+      return 'sentiment-badge slightly-positive'
+    case 'very negative':
+      return 'sentiment-badge very-negative'
+    case 'negative':
+      return 'sentiment-badge negative'
+    case 'slightly negative':
+      return 'sentiment-badge slightly-negative'
+    default:
+      return 'sentiment-badge neutral'
+  }
+}
+
+function formatSentimentLabel(label?: string): string {
+  if (!label) return 'Neutral'
+  return label.charAt(0).toUpperCase() + label.slice(1)
+}
+
 function App(): JSX.Element {
   const [portfolioInput, setPortfolioInput] = useState('')
   const [queryInput, setQueryInput] = useState('')
@@ -230,6 +254,11 @@ function App(): JSX.Element {
             risk_breakdown?: RiskScoreBreakdown
             company_name?: string
             logo_url?: string
+            sentiment?: {
+              label: string
+              average_compound: number
+              article_count: number
+            }
           }>
           query_interpretation?: {
             original: string
@@ -251,6 +280,7 @@ function App(): JSX.Element {
         riskBreakdown: rec.risk_breakdown,
         companyName: rec.company_name,
         logoUrl: rec.logo_url,
+        sentiment: rec.sentiment,
       }))
 
       const recommendations = await fetchRecommendationDescriptions(baseRecommendations)
@@ -414,7 +444,7 @@ function App(): JSX.Element {
                   </span>
                 </p>
                 <p className="risk-types-line">
-                  <strong className="report-label">Risk Types:</strong>{' '}
+                  <strong className="report-label">Portfolio's Risk Types:</strong>{' '}
                   <span className="report-value">{results.riskTypes.length > 0 ? results.riskTypes.join(', ') : 'No strong risk signals detected'}</span>
                 </p>
               </div>
@@ -442,6 +472,11 @@ function App(): JSX.Element {
                           <span className="suggestion-risk-block">
                             <span className="suggestion-risk-label">Similarity</span>
                             <strong className="suggestion-risk-value">{(stock.similarity * 100).toFixed(1)}%</strong>
+                            {stock.sentiment && (
+                              <span className={sentimentBadgeClass(stock.sentiment.label)}>
+                                {formatSentimentLabel(stock.sentiment.label)}
+                              </span>
+                            )}
                           </span>
                         </span>
                         <ul className="signal-bullets compact-bullets">
@@ -502,7 +537,24 @@ function App(): JSX.Element {
                 <span className="detail-metric-label">Similarity</span>
                 <span className="detail-metric-value">{(selectedRecommendation.similarity * 100).toFixed(1)}%</span>
               </div>
+              {selectedRecommendation.sentiment && (
+                <div className="detail-metric-card">
+                  <span className="detail-metric-label">Sentiment</span>
+                  <span className="detail-metric-value">
+                    {formatSentimentLabel(selectedRecommendation.sentiment.label)}
+                  </span>
+                </div>
+              )}
             </div>
+            {selectedRecommendation.sentiment && (
+              <p className="sentiment-detail-line">
+                Average compound score:{" "}
+                <strong>{selectedRecommendation.sentiment.average_compound.toFixed(3)}</strong>{" "}
+                based on{" "}
+                <strong>{selectedRecommendation.sentiment.article_count}</strong>{" "}
+                recent articles.
+              </p>
+            )}
 
             <div className="detail-section">
               <h4>Risk signal notes</h4>

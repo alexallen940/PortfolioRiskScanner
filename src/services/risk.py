@@ -170,3 +170,5 @@ def get_portfolio_risk_types(
     ranked_risk_types = sorted(risk_type_counts.items(), key=lambda x: x[1], reverse=True)
     res = [risk_type for risk_type, count in ranked_risk_types if count > 0]
     return res[:top_k]
+
+

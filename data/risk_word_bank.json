@@ -1,69 +1,80 @@
 {
   "market volatility": [
-    "volatility", "selloff", "price drop", "decline", "plunge", "uncertainty",
-    "pressure", "downturn", "share price weakness", "market reaction", "price swings",
-    "bearish market", "bullish market", "corrections", "instability", "headwinds", "slowing growth"
+    "volatility", "selloff", "price drop", "uncertainty",
+    "downturn", "share price weakness", "bearish market",
+    "corrections", "instability", "headwinds", "risk-off sentiment"
   ],
 
   "regulatory risk": [
-    "regulation", "antitrust", "lawsuit", "investigation", "fines", "penalty", "compliance", "ban", "legal action",
-    "settlement", "litigation", "court ruling", "regulations", 
-    "doj", "ftc"
+    "regulation", "antitrust", "lawsuit", "investigation", "fines", "penalty",
+    "compliance", "ban", "legal action", "settlement", "litigation",
+    "doj", "ftc", "sec", "regulatory scrutiny", "new legislation", "regulatory approval", "licensing issues"
   ],
 
   "financial risk": [
-    "debt", "net losses", "earnings miss", "missed expectations",
-    "revenue miss", "cash flow", "negative cash flow", "bankruptcy", "credit risk", "liquidity", "default",
-    "margin pressure", "profit warning", "guidance cut",
-    "weak earnings", "declining revenue", "revenue decline", "hyperscaler borrowing", "loans", "borrowing"
+    "debt", "net losses", "earnings miss", "negative cash flow",
+    "bankruptcy", "credit risk", "liquidity", "default", "margin pressure",
+    "guidance cut", "revenue decline", "borrowing", "write-down",
+    "impairment", "balance sheet pressure", "refinancing risk", "cost overruns",
+    "credit downgrade", "deleveraging", "interest expense"
   ],
 
   "operational risk": [
-    "recall", "shutdown", "strike", "delay",
-    "supply chain", "recalls", "shutdowns", "strikes",
-    "delays", "underproduction", "overproduction", "shortage",
-    "logistics issues", "inventory", "capacity constraints",
-    "labor shortage", "equipment failure", "layoffs", "outdated business model", "outdated business models",
-    "electricity costs"
+    "recall", "shutdown", "strike", "delay", "supply chain", "underproduction",
+    "overproduction", "shortage", "logistics issues", "inventory", "capacity constraints",
+    "labor shortage", "equipment failure", "layoffs", "production halt", "bottlenecks",
+    "fulfillment issues", "cost inflation", "input cost pressure",
+    "supplier disruption"
   ],
 
   "reputational risk": [
-    "controversy", "scandals", "backlash", "criticism", "boycott",
-    "fraud", "misconduct", "ethics", "data breach", "negative press", "whistleblower",
-    "allegations", "outrage", "public backlash", "scandal"
+    "criticism", "boycott", "fraud", "controversy",
+    "misconduct", "negative press", "whistleblower", "allegations",
+    "brand damage", "reputation hit",
+    "customer dissatisfaction", "public scrutiny"
   ],
 
   "geopolitical risk": [
-    "tariffs", "sanctions", "trade war", "geopolitics", "war",
-    "conflict", "exports", "imports",
-    "foreign policy", "embargoes",
-    "global tensions", "instability", "geopolitical tensions"
+    "tariffs", "sanctions", "trade war", "war", "conflict", "foreign policy",
+    "embargoes", "geopolitical tensions", "cross-border restrictions",
+    "export controls", "trade restrictions", "political instability", "regional tensions"
   ],
 
   "macroeconomic risk": [
-    "inflation", "interest rates", "rate hike", "fed", "federal reserve",
-    "economic slowdown", "recession", "macro environment", "monetary policy", "unemployment", "spending pressure", 
-    "spending slows", "depression", "socioeconomics",
-    "consumer spending slowdown", "stagflation", "macro uncertainty", "consumer spending slows", "tightening industrial supply"
+    "inflation", "interest rates", "federal reserve", "economic slowdown",
+    "recession", "monetary policy", "unemployment",
+    "consumer spending slowdown", "stagflation", "macro uncertainty",
+    "tightening conditions", "gdp slowdown",
+    "demand weakness", "higher borrowing costs"
   ],
 
   "sector-specific risk": [
-    "industry downturn", "sector weakness",
-    "demand slows", "oversupply", "competition",
-    "pricing pressure", "market saturation"
+    "industry downturn", "sector weakness", "demand slows", "oversupply", "competition",
+    "pricing pressure", "market saturation", "market share loss",
+    "substitution risk"
   ],
 
   "technology risk": [
-    "cybersecurity", "cyber attack", "hacks", "system outage",
-    "technical issue", "software bugs", "ai risk", "automation risk",
-    "platform failure", "data leak", "infrastructure failure", "security concerns",
-    "privacy concerns", "data breach", "malware", "vulnerabilities", "cyber threats", "internet disruptions", "cyberattack"
+    "cybersecurity", "system outage", "hacks", "cyber attack",
+    "software bugs", "ai risk", "automation risk", "data leak",
+    "infrastructure failure", "privacy concerns", "network outage",
+    "cloud failure", "data loss", "security breach"
   ],
 
   "environmental risk": [
-    "climate change", "environmental impact", "emissions", "pollution",
-    "carbon emissions", "sustainability concerns", "esg concerns",
+    "climate risk", "pollution", "carbon emissions", "esg concerns",
     "environmental regulation", "greenwashing", "resource depletion",
-    "greenhouse gas" 
+    "extreme weather"
+  ],
+
+  "management risk": [
+    "leadership change",
+    "poor leadership", "strategy shift", "restructuring",
+    "internal conflict", "mismanagement"
+  ],
+
+  "growth risk": [
+    "growth slowdown", "demand deceleration",
+    "expansion challenges", "limited growth potential", "growth concerns"
   ]
 }

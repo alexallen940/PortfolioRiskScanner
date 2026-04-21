@@ -99,6 +99,12 @@ export interface QueryInterpretation {
   corrections: Record<string, string>
 }
 
+export interface RecommendationSentiment {
+  label: string
+  average_compound: number
+  article_count: number
+}
+
 export interface Recommendation {
   ticker: string
   similarity: number
@@ -109,6 +115,7 @@ export interface Recommendation {
   logoUrl?: string
   description?: string[]
   descriptionDetails?: DescriptionDetail[]
+  sentiment?: RecommendationSentiment
 }
 
 export interface ScanResponse {

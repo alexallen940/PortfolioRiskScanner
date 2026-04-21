@@ -6,14 +6,194 @@ Setup:
   1. Add API_KEY=your_key to .env
   2. Set USE_LLM = True in routes.py
 """
+
 import json
 import os
 import re
 import logging
 from flask import request, jsonify, Response, stream_with_context
 from infosci_spark_client import LLMClient
+from models import Article
 
 logger = logging.getLogger(__name__)
+
+BASE_DIR = os.path.dirname(os.path.dirname(__file__))
+risk_word_bank_json_path = os.path.join(BASE_DIR, "data", "risk_word_bank.json")
+
+with open(risk_word_bank_json_path, "r") as f:
+    RISK_WORD_DICT = json.load(f)
+
+
+def get_risk_signals_for_tickers(tickers, client):
+    ticker_docs = {}
+    articles = Article.query.filter(Article.ticker.in_(tickers)).all()
+
+    for article in articles:
+        ticker = article.ticker.upper().strip()
+        if ticker not in ticker_docs:
+            ticker_docs[ticker] = []
+        ticker_docs[ticker].append(
+            {"headline": article.headline, "text": f"{article.headline} {article.summary}".strip()}
+        )
+
+    messages = [
+        {
+            "role": "system",
+            "content": (
+                "You will receive:\n"
+                "1) A risk word dictionary where each key is a risk category and each value is a list of risk signal terms.\n"
+                "2) A dictionary mapping stock tickers to a list of article objects.\n"
+                "Each article object has:\n"
+                "- headline\n"
+                "- text\n\n"
+                "Your task:\n"
+                "For each ticker, return a nested JSON object where:\n"
+                "- each ticker maps to risk categories,\n"
+                "- each risk category maps to risk signal terms from the provided dictionary,\n"
+                "- each risk signal term maps to an object with:\n"
+                '  - "count": number of articles that semantically express that signal\n'
+                '  - "article_indices": list of 0-based article indices supporting that signal\n\n'
+                "Matching rules:\n"
+                "- Match SEMANTICALLY, not only by exact keyword overlap.\n"
+                "- A signal term counts if an article clearly expresses that idea, even using paraphrased, synonymous, or closely related wording.\n"
+                "- Count the number of ARTICLES mentioning each signal, not raw word frequency.\n"
+                "- Each article contributes at most 1 count per signal term.\n"
+                "- A single article may count toward multiple signal terms if clearly supported.\n"
+                "- Be conservative: if uncertain, do not count it.\n"
+                "- Do NOT create new risk categories.\n"
+                "- Do NOT create new risk signal terms.\n"
+                "- Only use the exact risk categories and exact risk signal terms from the provided risk word dictionary.\n"
+                "- Only include signal terms with count > 0.\n"
+                "- Only include risk categories that contain at least one signal term with count > 0.\n"
+                "- If a ticker has no detected signals, return an empty object for that ticker.\n"
+                "- Make sure count equals the length of article_indices.\n\n"
+                "Respond ONLY with valid JSON in this format:\n"
+                "{\n"
+                '  "AAPL": {\n'
+                '    "operational risk": {\n'
+                '      "supply disruption": {\n'
+                '        "count": 3,\n'
+                '        "article_indices": [0, 2, 5]\n'
+                "      }\n"
+                "    }\n"
+                "  }\n"
+                "}\n"
+            ),
+        },
+        {
+            "role": "user",
+            "content": (
+                f"Risk word bank:\n{json.dumps(RISK_WORD_DICT, indent=2)}\n\n"
+                f"Ticker articles:\n{json.dumps(ticker_docs, indent=2)}"
+            ),
+        },
+    ]
+
+    response = client.chat(messages)
+    content = (response.get("content") or "").strip()
+
+    try:
+        parsed = json.loads(re.sub(r"```json|```", "", content).strip())
+        print(parsed)
+        return {
+            "signals": parsed,
+            "ticker_docs": ticker_docs,
+        }
+    except (json.JSONDecodeError, TypeError):
+        return {
+            "signals": {},
+            "ticker_docs": ticker_docs,
+        }
+
+
+def get_ticker_summary(tickers, client, positive_bias=False):
+    ticker_docs = {}
+    articles = Article.query.filter(Article.ticker.in_(tickers)).all()
+
+    for article in articles:
+        ticker = article.ticker.upper().strip()
+        if ticker not in ticker_docs:
+            ticker_docs[ticker] = []
+        ticker_docs[ticker].append(
+            {"headline": article.headline, "text": f"{article.headline} {article.summary}".strip()}
+        )
+
+    messages = [
+        {
+            "role": "system",
+            "content": (
+                "You will receive:\n"
+                "1) A risk word dictionary where each key is a risk category and each value is a list of risk signal terms.\n"
+                "2) A dictionary mapping stock tickers to a list of article objects.\n"
+                "3) A boolean flag indicating whether to use positive bias and if false, be harsh and find any risk signals you can.\n"
+                "Each article object has:\n"
+                "- headline\n"
+                "- text\n\n"
+                "Your task:\n"
+                "For each ticker, return a nested JSON object where:\n"
+                "- each ticker has a summary of the ticker's articles.\n\n"
+            ),
+        },
+        {
+            "role": "user",
+            "content": (
+                f"Risk word bank:\n{json.dumps(RISK_WORD_DICT, indent=2)}\n\n"
+                f"Ticker articles:\n{json.dumps(ticker_docs, indent=2)}"
+                f"Positive bias: {positive_bias}"
+            ),
+        },
+    ]
+
+    response = client.chat(messages)
+    content = (response.get("content") or "").strip()
+
+    try:
+        parsed = json.loads(re.sub(r"```json|```", "", content).strip())
+        print(parsed)
+        return parsed
+    except (json.JSONDecodeError, TypeError):
+        return {}
+
+
+def tickers_summary_decision():
+    data = request.get_json() or {}
+    tickers = data.get("tickers", [])
+    positive_bias = data.get("positive_bias", False)
+
+    if not tickers:
+        return jsonify({"error": "No tickers provided"}), 400
+
+    api_key = os.getenv("SPARK_API_KEY")
+    client = LLMClient(api_key=api_key)
+
+    result = get_ticker_summary(tickers, client, positive_bias)
+    return jsonify(result)
+
+
+def tickers_risk_signals_decision():
+    data = request.get_json() or {}
+    recommended_tickers = data.get("tickers", [])
+
+    if not recommended_tickers:
+        return jsonify({"error": "No tickers provided"}), 400
+
+    api_key = os.getenv("SPARK_API_KEY")
+    client = LLMClient(api_key=api_key)
+
+    result = get_risk_signals_for_tickers(recommended_tickers, client)
+    return jsonify(result)
+
+
+def register_tickers_summary_route(app):
+    @app.route("/api/portfolio/recommendations-summary", methods=["POST"])
+    def tickers_summary_route():
+        return tickers_summary_decision()
+
+
+def register_tickers_risk_signals_route(app):
+    @app.route("/api/portfolio/recommendations-risk-signals", methods=["POST"])
+    def tickers_risk_signals_route():
+        return tickers_risk_signals_decision()
 
 
 def llm_search_decision(client, user_message):
@@ -62,17 +242,26 @@ def register_chat_route(app, json_search):
 
         if use_search:
             episodes = json_search(search_term or "Kardashian")
-            context_text = "\n\n---\n\n".join(
-                f"Title: {ep['title']}\nDescription: {ep['descr']}\nIMDB Rating: {ep['imdb_rating']}"
-                for ep in episodes
-            ) or "No matching episodes found."
+            context_text = (
+                "\n\n---\n\n".join(
+                    f"Title: {ep['title']}\nDescription: {ep['descr']}\nIMDB Rating: {ep['imdb_rating']}"
+                    for ep in episodes
+                )
+                or "No matching episodes found."
+            )
             messages = [
-                {"role": "system", "content": "Answer questions about Keeping Up with the Kardashians using only the episode information provided."},
+                {
+                    "role": "system",
+                    "content": "Answer questions about Keeping Up with the Kardashians using only the episode information provided.",
+                },
                 {"role": "user", "content": f"Episode information:\n\n{context_text}\n\nUser question: {user_message}"},
             ]
         else:
             messages = [
-                {"role": "system", "content": "You are a helpful assistant for Keeping Up with the Kardashians questions."},
+                {
+                    "role": "system",
+                    "content": "You are a helpful assistant for Keeping Up with the Kardashians questions.",
+                },
                 {"role": "user", "content": user_message},
             ]
 
