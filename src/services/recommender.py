@@ -7,7 +7,13 @@ from infosci_spark_client import LLMClient
 import numpy as np
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.metrics.pairwise import cosine_similarity
-from llm_routes import get_risk_signals_for_tickers, get_ticker_summary, tickers_risk_signals_decision
+from llm_routes import (
+    get_ai_ticker_ranking,
+    get_risk_signals_for_tickers,
+    get_ticker_summary,
+    tickers_risk_signals_decision,
+    expand_stock_query,
+)
 from services.svd import get_fitted_svd
 from models import Article, RiskData
 from nltk.sentiment.vader import SentimentIntensityAnalyzer
@@ -540,6 +546,7 @@ def get_stock_recommendations(
     portfolio_weight=1,
     text_weight=150,
     text_weight_level="medium",
+    use_llm=True,
 ):
     ticker_docs = {}
     articles = Article.query.all()
@@ -577,7 +584,18 @@ def get_stock_recommendations(
             portfolio_texts.append(ticker_docs[ticker])
 
     unigram_features = [feature for feature in vectorizer.get_feature_names_out() if "_" not in feature]
-    corrected_characteristics, query_corrections = _fuzzy_correct_query_text(desired_characteristics, unigram_features)
+    query_for_retrieval = desired_characteristics
+
+    if use_llm:
+        api_key = os.getenv("SPARK_API_KEY")
+        try:
+            client = LLMClient(api_key=api_key)
+            # query expansion step
+            query_for_retrieval = expand_stock_query(desired_characteristics, client)
+        except Exception:
+            query_for_retrieval = desired_characteristics
+
+    corrected_characteristics, query_corrections = _fuzzy_correct_query_text(query_for_retrieval, unigram_features)
 
     # free text query
     characteristics_doc = corrected_characteristics.replace('"', "").replace("-", " ").lower().strip()
@@ -675,12 +693,25 @@ def get_stock_recommendations(
         }
     top_results = _enrich_with_yfinance(top_results)
 
+    if use_llm:
+        api_key = os.getenv("SPARK_API_KEY")
+        try:
+            client = LLMClient(api_key=api_key)
+            print("function was called")
+            top_results = get_ai_ticker_ranking(
+                [result["ticker"] for result in top_results], client, query_for_retrieval
+            )
+        except Exception:
+            pass
+
     return {
         "recommendations": top_results,
         "query_interpretation": {
             "original": desired_characteristics,
+            "expanded": query_for_retrieval if use_llm else None,
             "interpreted": corrected_characteristics,
             "corrections": query_corrections,
+            "used_query_expansion": use_llm,
         },
     }
 

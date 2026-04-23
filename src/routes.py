@@ -231,6 +231,6 @@ def register_routes(app):
     #     return jsonify(json_search(text))
 
     if USE_LLM:
-        from llm_routes import register_chat_route, register_tickers_risk_signals_route
+        from llm_routes import register_chat_route, register_tickers_risk_signals_route, register_ai_ticker_ranking_route
 
         # register_chat_route(app, json_search)
