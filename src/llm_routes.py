@@ -46,7 +46,7 @@ def expand_stock_query(user_query, client):
     response = client.chat(messages)
     content = (response.get("content") or "").strip()
     parsed = re.sub(r"\s+", " ", content)
-    print("\n" + parsed + "\n")
+    # print("\n" + parsed + "\n")
     return parsed
 
 
@@ -58,9 +58,7 @@ def get_risk_signals_for_tickers(tickers, client):
         ticker = article.ticker.upper().strip()
         if ticker not in ticker_docs:
             ticker_docs[ticker] = []
-        ticker_docs[ticker].append(
-            {"headline": article.headline, "text": f"{article.headline} {article.summary}".strip()}
-        )
+        ticker_docs[ticker].append({"headline": article.headline, "text": f"{article.summary}".strip().lower()})
 
     messages = [
         {
@@ -109,8 +107,7 @@ def get_risk_signals_for_tickers(tickers, client):
         {
             "role": "user",
             "content": (
-                f"Risk word bank:\n{json.dumps(RISK_WORD_DICT, indent=2)}\n\n"
-                f"Ticker articles:\n{json.dumps(ticker_docs, indent=2)}\n"
+                f"Risk word bank:\n{json.dumps(RISK_WORD_DICT)}\n\n" f"Ticker articles:\n{json.dumps(ticker_docs)}\n"
             ),
         },
     ]
@@ -140,9 +137,7 @@ def get_ticker_summary(tickers, client, positive_bias=False):
         ticker = article.ticker.upper().strip()
         if ticker not in ticker_docs:
             ticker_docs[ticker] = []
-        ticker_docs[ticker].append(
-            {"headline": article.headline, "text": f"{article.headline} {article.summary}".strip()}
-        )
+        ticker_docs[ticker].append({"headline": article.headline, "text": f"{article.summary}".strip().lower()})
 
     messages = [
         {
@@ -163,8 +158,8 @@ def get_ticker_summary(tickers, client, positive_bias=False):
         {
             "role": "user",
             "content": (
-                f"Risk word bank:\n{json.dumps(RISK_WORD_DICT, indent=2)}\n\n"
-                f"Ticker articles:\n{json.dumps(ticker_docs, indent=2)}\n"
+                f"Risk word bank:\n{json.dumps(RISK_WORD_DICT)}\n\n"
+                f"Ticker articles:\n{json.dumps(ticker_docs)}\n"
                 f"Positive bias: {positive_bias}\n"
             ),
         },
@@ -181,7 +176,7 @@ def get_ticker_summary(tickers, client, positive_bias=False):
         return {}
 
 
-def get_ai_ticker_ranking(tickers, client, free_text_query=""):
+def get_ai_ticker_ranking(tickers, client, free_text_query="", max_articles_per_ticker=5, max_summary_chars=400):
 
     ticker_docs = {}
     articles = Article.query.filter(Article.ticker.in_(tickers)).all()
@@ -190,8 +185,13 @@ def get_ai_ticker_ranking(tickers, client, free_text_query=""):
         ticker = article.ticker.upper().strip()
         if ticker not in ticker_docs:
             ticker_docs[ticker] = []
+        if len(ticker_docs[ticker]) >= max_articles_per_ticker:
+            continue
         ticker_docs[ticker].append(
-            {"headline": article.headline, "text": f"{article.headline} {article.summary}".strip()}
+            {
+                "headline": article.headline,
+                "summary": (article.summary or "")[:max_summary_chars].strip().lower(),
+            }
         )
 
     messages = [
@@ -199,7 +199,7 @@ def get_ai_ticker_ranking(tickers, client, free_text_query=""):
             "role": "system",
             "content": (
                 "You will receive:\n"
-                "1) A dictionary mapping stock tickers to a list of article objects.\n"
+                "1) ticker_docs, a dictionary mapping stock tickers to a list of article objects.\n"
                 "Each article object has:\n"
                 "- headline\n"
                 "- text\n\n"
@@ -232,23 +232,21 @@ def get_ai_ticker_ranking(tickers, client, free_text_query=""):
         {
             "role": "user",
             "content": (
-                f"Expanded free text query:\n{json.dumps(free_text_query, indent=2)}\n\n"
-                f"Tickers:\n{json.dumps(tickers, indent=2)}\n\n"
-                f"Ticker articles:\n{json.dumps(ticker_docs, indent=2)}\n"
+                f"Expanded free text query:\n{json.dumps(free_text_query)}\n\n"
+                f"Tickers:\n{json.dumps(tickers)}\n\n"
+                f"Ticker articles:\n{json.dumps(ticker_docs)}\n"
             ),
         },
     ]
 
     response = client.chat(messages)
     content = response.get("content")
-    print(f"\n[RAW CONTENT]: {content!r}\n", flush=True)
 
     try:
         parsed = json.loads(re.sub(r"```json|```", "", content).strip())
-        print(f"\n[PARSED]: {parsed}\n", flush=True)
+        # print(f"\n{parsed}\n")
         return parsed if isinstance(parsed, list) else []
     except (json.JSONDecodeError, TypeError) as e:
-        print(f"\n[PARSE FAILED]: {type(e).__name__}: {e}\n", flush=True)
         return []
 
 

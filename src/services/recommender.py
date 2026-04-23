@@ -11,7 +11,6 @@ from llm_routes import (
     get_ai_ticker_ranking,
     get_risk_signals_for_tickers,
     get_ticker_summary,
-    tickers_risk_signals_decision,
     expand_stock_query,
 )
 from services.svd import get_fitted_svd
@@ -19,6 +18,8 @@ from models import Article, RiskData
 from nltk.sentiment.vader import SentimentIntensityAnalyzer
 import json
 import os
+import traceback
+
 
 try:
     import yfinance as yfin
@@ -539,7 +540,7 @@ def _build_similarity_explanation(
 def get_stock_recommendations(
     user_portfolio,
     desired_characteristics="",
-    top_k=10,
+    top_k=4,
     vectorizer=TfidfVectorizer(stop_words="english", max_features=5000, ngram_range=(1, 3), min_df=10),
     use_svd=True,
     n_components=20,
@@ -694,15 +695,23 @@ def get_stock_recommendations(
     top_results = _enrich_with_yfinance(top_results)
 
     if use_llm:
-        api_key = os.getenv("SPARK_API_KEY")
         try:
+            api_key = os.getenv("SPARK_API_KEY")
             client = LLMClient(api_key=api_key)
-            print("function was called")
-            top_results = get_ai_ticker_ranking(
-                [result["ticker"] for result in top_results], client, query_for_retrieval
-            )
+
+            # print("IR tickers:", [result["ticker"] for result in top_results])
+            ranking = get_ai_ticker_ranking([result["ticker"] for result in top_results], client, query_for_retrieval)
+
+            temp = []
+            for ticker in ranking:
+                for result in top_results:
+                    if result["ticker"] == ticker:
+                        temp.append(result)
+
+            top_results = temp if len(temp) == len(top_results) else top_results
+
         except Exception:
-            pass
+            traceback.print_exc()
 
     return {
         "recommendations": top_results,
@@ -754,7 +763,67 @@ def get_recommendation_desc(ticker, max_articles=25, use_llm=True, top_k_risk_si
     details = []
     normalized_ticker = ticker.upper().strip()
 
-    if not use_llm:
+    if use_llm:
+        try:
+            api_key = os.getenv("SPARK_API_KEY")
+            client = LLMClient(api_key=api_key)
+
+            get_ticker_summary(tickers=[normalized_ticker], client=client)
+
+            data = get_risk_signals_for_tickers(tickers=[normalized_ticker], client=client)
+
+            signals_data = data.get("signals")
+            ticker_docs = data.get("ticker_docs")
+
+            for ticker, risk_types in signals_data.items():
+                docs = ticker_docs.get(ticker)
+                top_risks = sorted(
+                    risk_types.items(),
+                    key=lambda kv: sum(signal["count"] for signal in kv[1].values()),
+                    reverse=True,
+                )[:top_k_risk_types]
+
+                for risk_type, signals in top_risks:
+                    if not signals:
+                        continue
+                    top_signal_items = sorted(
+                        signals.items(),
+                        key=lambda kv: kv[1]["count"],
+                        reverse=True,
+                    )[:top_k_risk_signals]
+
+                    signal_names = [signal for signal, _ in top_signal_items]
+                    signal_text = " and ".join(signal_names)
+
+                    article_indices = []
+                    for _, info in top_signal_items:
+                        for i in info.get("article_indices"):
+                            if i not in article_indices:
+                                article_indices.append(i)
+
+                    headlines = [
+                        {
+                            "title": docs[i]["headline"],
+                            "url": ARTICLE_LINK_LOOKUP.get((ticker, docs[i]["headline"])),
+                        }
+                        for i in article_indices
+                        if 0 <= i < len(docs) and docs[i].get("headline")
+                    ][:3]
+
+                    bullet = f"{risk_type} due to {signal_text} risk signals"
+
+                    bullets.append(bullet)
+                    details.append(
+                        {
+                            "bullet": bullet,
+                            "headlines": headlines,
+                        }
+                    )
+
+        except Exception:
+            traceback.print_exc()
+
+    if not use_llm or (not details and not bullets):
         # take 'max_articles' number of most recent articles for ticker
         articles = (
             Article.query.filter_by(ticker=normalized_ticker).order_by(Article.id.desc()).limit(max_articles).all()
@@ -829,60 +898,5 @@ def get_recommendation_desc(ticker, max_articles=25, use_llm=True, top_k_risk_si
                     "headlines": headline_hits.get(risk, []),
                 }
             )
-    else:
-        api_key = os.getenv("SPARK_API_KEY")
-        client = LLMClient(api_key=api_key)
-
-        get_ticker_summary(tickers=[normalized_ticker], client=client)
-
-        data = get_risk_signals_for_tickers(tickers=[normalized_ticker], client=client)
-
-        signals_data = data.get("signals")
-        ticker_docs = data.get("ticker_docs")
-
-        for ticker, risk_types in signals_data.items():
-            docs = ticker_docs.get(ticker)
-            top_risks = sorted(
-                risk_types.items(),
-                key=lambda kv: sum(signal["count"] for signal in kv[1].values()),
-                reverse=True,
-            )[:top_k_risk_types]
-
-            for risk_type, signals in top_risks:
-                if not signals:
-                    continue
-                top_signal_items = sorted(
-                    signals.items(),
-                    key=lambda kv: kv[1]["count"],
-                    reverse=True,
-                )[:top_k_risk_signals]
-
-                signal_names = [signal for signal, _ in top_signal_items]
-                signal_text = " and ".join(signal_names)
-
-                article_indices = []
-                for _, info in top_signal_items:
-                    for i in info.get("article_indices"):
-                        if i not in article_indices:
-                            article_indices.append(i)
-
-                headlines = [
-                    {
-                        "title": docs[i]["headline"],
-                        "url": ARTICLE_LINK_LOOKUP.get((ticker, docs[i]["headline"])),
-                    }
-                    for i in article_indices
-                    if 0 <= i < len(docs) and docs[i].get("headline")
-                ][:3]
-
-                bullet = f"{risk_type} due to {signal_text} risk signals"
-
-                bullets.append(bullet)
-                details.append(
-                    {
-                        "bullet": bullet,
-                        "headlines": headlines,
-                    }
-                )
 
     return {"bullets": bullets, "details": details}
