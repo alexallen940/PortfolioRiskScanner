@@ -214,19 +214,82 @@
   background: linear-gradient(180deg, rgba(255, 255, 255, 0.88), rgba(252, 250, 246, 0.9));
 }
 
-.query-interpretation-note {
-  margin: 12px 0 0;
-  padding: 10px 12px;
-  border-radius: 10px;
+/* ── Query interpretation card ── */
+.query-interpretation-card {
+  margin: 14px 0 0;
+  padding: 14px 16px;
+  border-radius: 14px;
   border: 1px solid rgba(45, 122, 79, 0.22);
-  background: rgba(45, 122, 79, 0.08);
-  color: #1f3b2d;
-  font-size: 0.93rem;
-  line-height: 1.45;
+  background: rgba(45, 122, 79, 0.06);
+  display: grid;
+  gap: 8px;
 }
 
-.query-interpretation-note strong {
+.query-interp-kicker {
+  margin: 0;
+  font-size: 0.72rem;
   font-weight: 700;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: #2d7a4f;
+}
+
+.query-interp-row {
+  display: grid;
+  grid-template-columns: 72px minmax(0, 1fr);
+  gap: 8px;
+  align-items: baseline;
+}
+
+.query-interp-label {
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: #516273;
+  flex-shrink: 0;
+}
+
+.query-interp-value {
+  font-size: 0.88rem;
+  color: #1f3b2d;
+  line-height: 1.5;
+}
+
+.query-interp-expanded {
+  font-style: italic;
+  color: #1a3d2b;
+}
+
+.query-interp-corrections {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 2px;
+}
+
+.correction-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 8px;
+  border-radius: 999px;
+  background: rgba(45, 122, 79, 0.1);
+  border: 1px solid rgba(45, 122, 79, 0.2);
+  font-size: 0.78rem;
+}
+
+.correction-from {
+  color: #64748b;
+  text-decoration: line-through;
+}
+
+.correction-arrow {
+  color: #2d7a4f;
+  font-size: 0.72rem;
+}
+
+.correction-to {
+  color: #1a3d2b;
+  font-weight: 600;
 }
 
 .risk-score-section {
@@ -503,6 +566,49 @@
   margin-top: 16px;
   display: grid;
   gap: 16px;
+}
+
+.field-note {
+  margin: 4px 0 6px;
+  font-size: 0.83rem;
+  line-height: 1.5;
+  color: #64748b;
+}
+
+.suggestions-tabs {
+  display: flex;
+  gap: 6px;
+  margin: 12px 0 0;
+}
+
+.suggestions-tab {
+  padding: 6px 16px;
+  border-radius: 999px;
+  border: 1px solid #d1d5db;
+  background: #f8fafc;
+  color: #374151;
+  font-size: 0.85rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s, color 0.15s;
+}
+
+.suggestions-tab:hover {
+  border-color: #2d7a4f;
+  color: #1a3d2b;
+}
+
+.suggestions-tab.active {
+  background: #2d7a4f;
+  border-color: #2d7a4f;
+  color: #fff;
+}
+
+.suggestions-tab-note {
+  margin: 6px 0 0;
+  font-size: 0.82rem;
+  color: #64748b;
+  line-height: 1.4;
 }
 
 .recommendation-card {

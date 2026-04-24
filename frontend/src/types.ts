@@ -124,5 +124,6 @@ export interface ScanResponse {
   riskTypes: string[]
   summary: string
   recommendations: Recommendation[]
+  irRecommendations: Recommendation[]
   queryInterpretation?: QueryInterpretation
 }

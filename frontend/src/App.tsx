@@ -179,6 +179,7 @@ function App(): JSX.Element {
   const [isLoading, setIsLoading] = useState(false)
   const [selectedRecommendation, setSelectedRecommendation] = useState<Recommendation | null>(null)
   const [isFormulaOpen, setIsFormulaOpen] = useState(false)
+  const [suggestionsTab, setSuggestionsTab] = useState<'ir' | 'llm'>('llm')
 
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent): void => {
@@ -260,6 +261,20 @@ function App(): JSX.Element {
               article_count: number
             }
           }>
+          ir_recommendations: Array<{
+            ticker: string
+            similarity: number
+            similarity_explanation?: SimilarityExplanation
+            risk_score?: number
+            risk_breakdown?: RiskScoreBreakdown
+            company_name?: string
+            logo_url?: string
+            sentiment?: {
+              label: string
+              average_compound: number
+              article_count: number
+            }
+          }>
           query_interpretation?: {
             original: string
             interpreted: string
@@ -272,7 +287,7 @@ function App(): JSX.Element {
         }),
       ])
 
-      const baseRecommendations: Recommendation[] = recsData.recommendations.slice(0, 4).map(rec => ({
+      const mapRec = (rec: typeof recsData.recommendations[0]): Recommendation => ({
         ticker: rec.ticker,
         similarity: rec.similarity,
         similarityExplanation: rec.similarity_explanation,
@@ -281,9 +296,15 @@ function App(): JSX.Element {
         companyName: rec.company_name,
         logoUrl: rec.logo_url,
         sentiment: rec.sentiment,
-      }))
+      })
 
-      const recommendations = await fetchRecommendationDescriptions(baseRecommendations)
+      const baseRecommendations = recsData.recommendations.slice(0, 4).map(mapRec)
+      const baseIrRecommendations = (recsData.ir_recommendations ?? recsData.recommendations).slice(0, 4).map(mapRec)
+
+      const [recommendations, irRecommendations] = await Promise.all([
+        fetchRecommendationDescriptions(baseRecommendations),
+        fetchRecommendationDescriptions(baseIrRecommendations),
+      ])
 
       const response: ScanResponse = {
         baseRiskScore: riskScoreData.risk_score,
@@ -291,6 +312,7 @@ function App(): JSX.Element {
         riskTypes: Array.from(new Set(riskTypesData.risk_types)).slice(0, 5),
         summary: `Generated ${recommendations.length} recommendations for ${parsedPortfolio.length} holdings. Query context: ${queryInput.trim()}`,
         recommendations,
+        irRecommendations,
         queryInterpretation: recsData.query_interpretation,
       }
 
@@ -319,7 +341,7 @@ function App(): JSX.Element {
         <form className="control-panel" onSubmit={handleSubmit}>
           <div className="panel-header">
             <h2>Search Inputs</h2>
-            <p>Provide a list of your portfolio tickers using the portfolio text box (separated by commas) and/or a CSV file (separated by whitespace, commas, or cells, though a ticker column would be optimal). All inputted tickers will be included. </p>
+            <p>Provide a list of your portfolio tickers using the portfolio text box (separated by commas) and/or a CSV file (separated by whitespace, commas, or cells, though a ticker column would be optimal). All inputted tickers will be included across the text box and CSV. </p>
           </div>
 
           <label className="field-block" htmlFor="portfolio-input">
@@ -342,6 +364,7 @@ function App(): JSX.Element {
 
           <label className="field-block" htmlFor="query-input">
             <p>Describe the risk profile, industry, or other characteristics in plain language.</p>
+            <p className="field-note">Your free-text query influences which stocks are suggested, but the risk bullet points are based on each stock&apos;s risk-signal analysis and may not directly reflect your query wording.</p>
             <span>Desired stock characteristics</span>
             <textarea
               id="query-input"
@@ -382,10 +405,29 @@ function App(): JSX.Element {
 
           {results && (
             <>
-              {results.queryInterpretation && Object.keys(results.queryInterpretation.corrections).length > 0 && (
-                <p className="query-interpretation-note">
-                  Interpreted query: <strong>{results.queryInterpretation.interpreted}</strong>
-                </p>
+              {results.queryInterpretation?.interpreted && (
+                <div className="query-interpretation-card">
+                  <p className="query-interp-kicker">AI query expansion</p>
+                  <div className="query-interp-row">
+                    <span className="query-interp-label">Original</span>
+                    <span className="query-interp-value">{results.queryInterpretation.original}</span>
+                  </div>
+                  <div className="query-interp-row">
+                    <span className="query-interp-label">Expanded</span>
+                    <span className="query-interp-value query-interp-expanded">{results.queryInterpretation.interpreted}</span>
+                  </div>
+                  {Object.keys(results.queryInterpretation.corrections).length > 0 && (
+                    <div className="query-interp-corrections">
+                      {Object.entries(results.queryInterpretation.corrections).map(([from, to]) => (
+                        <span key={from} className="correction-chip">
+                          <span className="correction-from">{from}</span>
+                          <span className="correction-arrow">→</span>
+                          <span className="correction-to">{to}</span>
+                        </span>
+                      ))}
+                    </div>
+                  )}
+                </div>
               )}
               <div className="risk-score-section">
                 <p className="risk-score-line">
@@ -451,8 +493,29 @@ function App(): JSX.Element {
 
               <div className="recommendations-section">
                 <h3 className="section-divider">Stock Suggestions</h3>
+                <div className="suggestions-tabs">
+                  <button
+                    type="button"
+                    className={`suggestions-tab${suggestionsTab === 'ir' ? ' active' : ''}`}
+                    onClick={() => setSuggestionsTab('ir')}
+                  >
+                    IR ranking
+                  </button>
+                  <button
+                    type="button"
+                    className={`suggestions-tab${suggestionsTab === 'llm' ? ' active' : ''}`}
+                    onClick={() => setSuggestionsTab('llm')}
+                  >
+                    AI ranking
+                  </button>
+                </div>
+                <p className="suggestions-tab-note">
+                  {suggestionsTab === 'ir'
+                    ? 'Ranked by cosine similarity between your query and each stock\'s article profile (no LLM).'
+                    : 'Re-ranked by AI using the expanded query and article evidence.'}
+                </p>
                 <div className="recommendation-list">
-                  {results.recommendations.map((stock, index) => (
+                  {(suggestionsTab === 'llm' ? results.recommendations : results.irRecommendations).map((stock, index) => (
                     <button
                       key={stock.ticker}
                       type="button"
@@ -470,8 +533,12 @@ function App(): JSX.Element {
                             </span>
                           </span>
                           <span className="suggestion-risk-block">
-                            <span className="suggestion-risk-label">Similarity</span>
-                            <strong className="suggestion-risk-value">{(stock.similarity * 100).toFixed(1)}%</strong>
+                            {suggestionsTab === 'ir' && (
+                              <>
+                                <span className="suggestion-risk-label">Similarity</span>
+                                <strong className="suggestion-risk-value">{(stock.similarity * 100).toFixed(1)}%</strong>
+                              </>
+                            )}
                             {stock.sentiment && (
                               <span className={sentimentBadgeClass(stock.sentiment.label)}>
                                 {formatSentimentLabel(stock.sentiment.label)}

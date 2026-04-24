@@ -694,6 +694,9 @@ def get_stock_recommendations(
         }
     top_results = _enrich_with_yfinance(top_results)
 
+    # Preserve IR-only order before any LLM reranking
+    ir_results = list(top_results)
+
     if use_llm:
         try:
             api_key = os.getenv("SPARK_API_KEY")
@@ -715,6 +718,7 @@ def get_stock_recommendations(
 
     return {
         "recommendations": top_results,
+        "ir_recommendations": ir_results,
         "query_interpretation": {
             "original": desired_characteristics,
             "expanded": query_for_retrieval if use_llm else None,
@@ -783,7 +787,7 @@ def get_recommendation_desc(ticker, max_articles=25, use_llm=True, top_k_risk_si
                     reverse=True,
                 )[:top_k_risk_types]
 
-                for risk_type, signals in top_risks:
+                for risk_type_idx, (risk_type, signals) in enumerate(top_risks):
                     if not signals:
                         continue
                     top_signal_items = sorted(
@@ -810,7 +814,10 @@ def get_recommendation_desc(ticker, max_articles=25, use_llm=True, top_k_risk_si
                         if 0 <= i < len(docs) and docs[i].get("headline")
                     ][:3]
 
-                    bullet = f"{risk_type} due to {signal_text} risk signals"
+                    if risk_type_idx == 0:
+                        bullet = f"{risk_type} due to {signal_text} risk signals in recent news coverage"
+                    else:
+                        bullet = f"{risk_type} due to {signal_text} risk signals"
 
                     bullets.append(bullet)
                     details.append(
@@ -881,9 +888,8 @@ def get_recommendation_desc(ticker, max_articles=25, use_llm=True, top_k_risk_si
             keywords = list(dict.fromkeys(keyword_hits.get(risk, [])))[:top_k_risk_signals]
             if keywords:
                 keyword_text = " and ".join(keywords)
-                # First bullet includes news reference, subsequent ones don't
                 if i == 0:
-                    bullet = f"{risk} due to {keyword_text} risk signals"
+                    bullet = f"{risk} due to {keyword_text} risk signals in recent news coverage"
                 else:
                     bullet = f"{risk} due to {keyword_text} risk signals"
             else:
