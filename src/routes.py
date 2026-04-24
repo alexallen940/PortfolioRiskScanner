@@ -205,7 +205,7 @@ def register_routes(app):
         if not ticker:
             return jsonify({"error": "Ticker not provided"})
 
-        result = get_recommendation_desc(ticker)
+        result = get_recommendation_desc(ticker, use_llm=False)
         return jsonify(
             {
                 "ticker": ticker.upper(),
