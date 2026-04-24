@@ -6,6 +6,7 @@ from dotenv import load_dotenv
 from flask import Flask
 from datetime import datetime
 from services.risk import get_portfolio_risk_score, get_portfolio_risk_types
+from services.recommender import INDEX
 
 
 load_dotenv()
@@ -97,6 +98,10 @@ init_db()
 #             top_k=5,
 #         )
 #     )
+
+
+with app.app_context():
+    INDEX.build()
 
 if __name__ == "__main__":
     app.run(debug=True, host="0.0.0.0", port=5001)

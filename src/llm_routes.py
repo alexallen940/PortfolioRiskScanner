@@ -10,247 +10,13 @@ Setup:
 import json
 import os
 import re
-import logging
 from flask import request, jsonify, Response, stream_with_context
 from infosci_spark_client import LLMClient
-from models import Article
-
-logger = logging.getLogger(__name__)
-
-BASE_DIR = os.path.dirname(os.path.dirname(__file__))
-risk_word_bank_json_path = os.path.join(BASE_DIR, "data", "risk_word_bank.json")
-
-with open(risk_word_bank_json_path, "r") as f:
-    RISK_WORD_DICT = json.load(f)
-
-
-def expand_stock_query(user_query, client):
-    messages = [
-        {
-            "role": "system",
-            "content": (
-                "You rewrite user stock-screening queries for information retrieval.\n"
-                "Expand the query into a concise search string that preserves the user's intent.\n"
-                "Include related industry terms, business characteristics, and synonyms that would help retrieve relevant stocks.\n"
-                "Do not mention specific stock tickers, company names, or names of public figures unless the user explicitly included them.\n"
-                "Do not explain your reasoning.\n"
-                "Return ONLY a short expanded query string."
-            ),
-        },
-        {
-            "role": "user",
-            "content": f"User stock preference query: {user_query}",
-        },
-    ]
-
-    response = client.chat(messages)
-    content = (response.get("content") or "").strip()
-    parsed = re.sub(r"\s+", " ", content)
-    # print("\n" + parsed + "\n")
-    return parsed
-
-
-def get_risk_signals_for_tickers(tickers, client):
-    ticker_docs = {}
-    articles = Article.query.filter(Article.ticker.in_(tickers)).all()
-
-    for article in articles:
-        ticker = article.ticker.upper().strip()
-        if ticker not in ticker_docs:
-            ticker_docs[ticker] = []
-        ticker_docs[ticker].append({"headline": article.headline, "text": f"{article.summary}".strip().lower()})
-
-    messages = [
-        {
-            "role": "system",
-            "content": (
-                "You will receive:\n"
-                "1) A risk word dictionary where each key is a risk category and each value is a list of risk signal terms.\n"
-                "2) A dictionary mapping stock tickers to a list of article objects.\n"
-                "Each article object has:\n"
-                "- headline\n"
-                "- text\n\n"
-                "Your task:\n"
-                "For each ticker, return a nested JSON object where:\n"
-                "- each ticker maps to risk categories,\n"
-                "- each risk category maps to risk signal terms from the provided dictionary,\n"
-                "- each risk signal term maps to an object with:\n"
-                '  - "count": number of articles that semantically express that signal\n'
-                '  - "article_indices": list of 0-based article indices supporting that signal\n\n'
-                "Matching rules:\n"
-                "- Match SEMANTICALLY, not only by exact keyword overlap.\n"
-                "- A signal term counts if an article clearly expresses that idea, even using paraphrased, synonymous, or closely related wording.\n"
-                "- Count the number of ARTICLES mentioning each signal, not raw word frequency.\n"
-                "- Each article contributes at most 1 count per signal term.\n"
-                "- A single article may count toward multiple signal terms if clearly supported.\n"
-                "- Be conservative: if uncertain, do not count it.\n"
-                "- Do NOT create new risk categories.\n"
-                "- Do NOT create new risk signal terms.\n"
-                "- Only use the exact risk categories and exact risk signal terms from the provided risk word dictionary.\n"
-                "- Only include signal terms with count > 0.\n"
-                "- Only include risk categories that contain at least one signal term with count > 0.\n"
-                "- If a ticker has no detected signals, return an empty object for that ticker.\n"
-                "- Make sure count equals the length of article_indices.\n\n"
-                "Respond ONLY with valid JSON in this format:\n"
-                "{\n"
-                '  "AAPL": {\n'
-                '    "operational risk": {\n'
-                '      "supply disruption": {\n'
-                '        "count": 3,\n'
-                '        "article_indices": [0, 2, 5]\n'
-                "      }\n"
-                "    }\n"
-                "  }\n"
-                "}\n"
-            ),
-        },
-        {
-            "role": "user",
-            "content": (
-                f"Risk word bank:\n{json.dumps(RISK_WORD_DICT)}\n\n" f"Ticker articles:\n{json.dumps(ticker_docs)}\n"
-            ),
-        },
-    ]
-
-    response = client.chat(messages)
-    content = (response.get("content") or "").strip()
-
-    try:
-        parsed = json.loads(re.sub(r"```json|```", "", content).strip())
-        # print("\n" + parsed + "\n")
-        return {
-            "signals": parsed,
-            "ticker_docs": ticker_docs,
-        }
-    except (json.JSONDecodeError, TypeError):
-        return {
-            "signals": {},
-            "ticker_docs": ticker_docs,
-        }
-
-
-def get_ticker_summary(tickers, client, positive_bias=False):
-    ticker_docs = {}
-    articles = Article.query.filter(Article.ticker.in_(tickers)).all()
-
-    for article in articles:
-        ticker = article.ticker.upper().strip()
-        if ticker not in ticker_docs:
-            ticker_docs[ticker] = []
-        ticker_docs[ticker].append({"headline": article.headline, "text": f"{article.summary}".strip().lower()})
-
-    messages = [
-        {
-            "role": "system",
-            "content": (
-                "You will receive:\n"
-                "1) A risk word dictionary where each key is a risk category and each value is a list of risk signal terms.\n"
-                "2) A dictionary mapping stock tickers to a list of article objects.\n"
-                "3) A boolean flag indicating whether to use positive bias and if false, be harsh and find any risk signals you can.\n"
-                "Each article object has:\n"
-                "- headline\n"
-                "- text\n\n"
-                "Your task:\n"
-                "For each ticker, return a nested JSON object where:\n"
-                "- each ticker has a summary of the ticker's articles.\n\n"
-            ),
-        },
-        {
-            "role": "user",
-            "content": (
-                f"Risk word bank:\n{json.dumps(RISK_WORD_DICT)}\n\n"
-                f"Ticker articles:\n{json.dumps(ticker_docs)}\n"
-                f"Positive bias: {positive_bias}\n"
-            ),
-        },
-    ]
-
-    response = client.chat(messages)
-    content = (response.get("content") or "").strip()
-
-    try:
-        parsed = json.loads(re.sub(r"```json|```", "", content).strip())
-        # print("\n" + parsed + "\n")
-        return parsed
-    except (json.JSONDecodeError, TypeError):
-        return {}
-
-
-def get_ai_ticker_ranking(tickers, client, free_text_query="", max_articles_per_ticker=5, max_summary_chars=400):
-
-    ticker_docs = {}
-    articles = Article.query.filter(Article.ticker.in_(tickers)).all()
-
-    for article in articles:
-        ticker = article.ticker.upper().strip()
-        if ticker not in ticker_docs:
-            ticker_docs[ticker] = []
-        if len(ticker_docs[ticker]) >= max_articles_per_ticker:
-            continue
-        ticker_docs[ticker].append(
-            {
-                "headline": article.headline,
-                "summary": (article.summary or "")[:max_summary_chars].strip().lower(),
-            }
-        )
-
-    messages = [
-        {
-            "role": "system",
-            "content": (
-                "You will receive:\n"
-                "1) ticker_docs, a dictionary mapping stock tickers to a list of article objects.\n"
-                "Each article object has:\n"
-                "- headline\n"
-                "- text\n\n"
-                "2) A list of stock tickers.\n"
-                "3) An expanded free text query string describing the stock characteristics the user wants.\n\n"
-                "Your task:\n"
-                "Re-rank the input ticker list from most semantically aligned to least semantically aligned with the expanded free text query string.\n"
-                "Use the article objects for each ticker as the primary evidence for determining alignment.\n"
-                "The output should contain the same tickers as the input, reordered from best alignment to worst alignment with the expanded free text query string.\n\n"
-                "Ranking rules:\n"
-                "- Use SEMANTIC reasoning, not exact keyword overlap only.\n"
-                "- Compare the expanded free text query string against the themes, risks, business characteristics, and signals present in each ticker's articles.\n"
-                "- Rank higher the tickers whose article evidence is more aligned with the user's desired characteristics.\n"
-                "- Rank lower the tickers whose article evidence is less aligned with the user's desired characteristics.\n"
-                "- Be conservative and consistent in your ranking.\n"
-                "- Do NOT add any new tickers.\n"
-                "- Do NOT remove any tickers.\n"
-                "- Do NOT return explanations.\n"
-                "- Do NOT return scores, labels, or extra text.\n"
-                "- Return ONLY a valid JSON array.\n\n"
-                "Respond ONLY with valid JSON in this format:\n"
-                "[\n"
-                '  "PANW",\n'
-                '  "QCOM",\n'
-                '  "ACN",\n'
-                '  "CSCO"\n'
-                "]\n"
-            ),
-        },
-        {
-            "role": "user",
-            "content": (
-                f"Expanded free text query:\n{json.dumps(free_text_query)}\n\n"
-                f"Tickers:\n{json.dumps(tickers)}\n\n"
-                f"Ticker articles:\n{json.dumps(ticker_docs)}\n"
-            ),
-        },
-    ]
-
-    response = client.chat(messages)
-    content = response.get("content")
-
-    try:
-        parsed = json.loads(re.sub(r"```json|```", "", content).strip())
-        # print(f"\n{parsed}\n")
-        return parsed if isinstance(parsed, list) else []
-    except (json.JSONDecodeError, TypeError) as e:
-        return []
+from services.llm_services import _get_client, get_ticker_summary, get_risk_signals_for_tickers, get_ai_ticker_ranking
 
 
 def tickers_summary_decision():
+
     data = request.get_json() or {}
     tickers = data.get("tickers", [])
     positive_bias = data.get("positive_bias", False)
@@ -258,10 +24,7 @@ def tickers_summary_decision():
     if not tickers:
         return jsonify({"error": "No tickers provided"}), 400
 
-    api_key = os.getenv("SPARK_API_KEY")
-    client = LLMClient(api_key=api_key)
-
-    result = get_ticker_summary(tickers, client, positive_bias)
+    result = get_ticker_summary(tickers, _get_client(), positive_bias)
     return jsonify(result)
 
 
@@ -272,10 +35,7 @@ def tickers_risk_signals_decision():
     if not recommended_tickers:
         return jsonify({"error": "No tickers provided"}), 400
 
-    api_key = os.getenv("SPARK_API_KEY")
-    client = LLMClient(api_key=api_key)
-
-    result = get_risk_signals_for_tickers(recommended_tickers, client)
+    result = get_risk_signals_for_tickers(recommended_tickers, _get_client())
     return jsonify(result)
 
 
@@ -287,10 +47,7 @@ def ai_ticker_ranking_decision():
     if not tickers:
         return jsonify({"error": "No tickers provided"}), 400
 
-    api_key = os.getenv("SPARK_API_KEY")
-    client = LLMClient(api_key=api_key)
-
-    result = get_ai_ticker_ranking(tickers, client, free_text_query)
+    result = get_ai_ticker_ranking(tickers, _get_client(), free_text_query)
     return jsonify(result)
 
 

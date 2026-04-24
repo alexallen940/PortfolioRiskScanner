@@ -103,14 +103,10 @@ def _portfolio_validation_error(portfolio):
     if suggestions:
         suggestion_text = "; ".join(f"{ticker} -> {match}" for ticker, match in suggestions.items())
         error_message = (
-            "Portfolio contains tickers outside the S&P 500: "
-            f"{', '.join(invalid)}. Did you mean: {suggestion_text}?"
+            "Portfolio contains tickers outside the S&P 500: " f"{', '.join(invalid)}. Did you mean: {suggestion_text}?"
         )
     else:
-        error_message = (
-            "Portfolio contains tickers outside the S&P 500: "
-            f"{', '.join(invalid)}"
-        )
+        error_message = "Portfolio contains tickers outside the S&P 500: " f"{', '.join(invalid)}"
 
     return jsonify({"error": error_message, "invalid_tickers": invalid, "suggestions": suggestions}), 400
 
@@ -145,7 +141,7 @@ def register_routes(app):
         portfolio_error = _portfolio_validation_error(portfolio)
         if portfolio_error:
             return portfolio_error
-        
+
         if not desired_characteristics:
             return jsonify({"error": "Free text query not provided"})
 
@@ -201,11 +197,12 @@ def register_routes(app):
     def recommendation_description():
         data = request.get_json()
         ticker = data.get("ticker", "").strip()
+        use_llm = data.get("use_llm", False)
 
         if not ticker:
             return jsonify({"error": "Ticker not provided"})
 
-        result = get_recommendation_desc(ticker, use_llm=False)
+        result = get_recommendation_desc(ticker, use_llm=use_llm)
         return jsonify(
             {
                 "ticker": ticker.upper(),
