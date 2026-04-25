@@ -222,11 +222,6 @@ def register_routes(app):
         result = get_ticker_sentiment_summary(ticker)
         return jsonify(result)
 
-    # @app.route("/api/episodes")
-    # def episodes_search():
-    #     text = request.args.get("title", "")
-    #     return jsonify(json_search(text))
-
     if USE_LLM:
         from llm_routes import (
             register_ai_ticker_ranking_route,

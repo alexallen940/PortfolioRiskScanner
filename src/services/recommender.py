@@ -101,6 +101,7 @@ def _website_to_domain(website):
 
     return domain or None
 
+
 def get_article_url(ticker, headline):
     exact_url = INDEX.article_link_lookup.get((ticker, headline))
     if exact_url:
@@ -165,6 +166,7 @@ def _enrich_with_yfinance(results):
         enriched.append(merged)
 
     return enriched
+
 
 def get_signal_count(signal):
     if isinstance(signal, dict):
@@ -665,7 +667,7 @@ def get_recommendation_desc(
 
                     article_indices = []
                     for _, info in top_signal_items:
-                        if isinstance (info, dict):
+                        if isinstance(info, dict):
                             for i in info.get("article_indices"):
                                 if i not in article_indices:
                                     article_indices.append(i)
@@ -680,6 +682,8 @@ def get_recommendation_desc(
                     ][:k_headlines]
 
                     bullet = f"{risk_type} due to {signal_text} risk signals"
+
+                    # print(get_ticker_summary(tickers=[ticker], client=client))
 
                     bullets.append(bullet)
                     details.append(

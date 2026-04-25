@@ -33,7 +33,7 @@ def _ticker_docs_from_index(tickers, max_articles_per_ticker=30, max_summary_cha
             res[normalized].append(
                 {
                     "headline": (article.headline or "")[:max_headline_chars].strip().lower(),
-                    "text": (article.summary or "")[:max_summary_chars].strip().lower()
+                    "text": (article.summary or "")[:max_summary_chars].strip().lower(),
                 }
             )
     return res
@@ -122,21 +122,19 @@ _TICKERS_SUMMARY_PROMPT = (
     "- headline\n"
     "- text\n\n"
     "Your task:\n"
-    "For each ticker, write a concise 2-3 sentence summary describing:\n"
+    "For each ticker, write a concise 3-5 sentence summary describing:\n"
     "- key risks\n"
     "- business context\n"
     "- overall outlook\n\n"
-
     "Guidelines:\n"
     "- Be specific and grounded in the articles\n"
     "- If positive_bias is true, emphasize strengths\n"
     "- If false, emphasize risk factors and weaknesses\n"
     "- Do NOT list bullet points\n"
     "- Use specific, concrete language grounded in the provided articles.\n"
-    "- Keep summaries to 2-3 sentences max.\n"
+    "- Keep summaries to 3-5 sentences max.\n"
     "- Do not repeat the same idea across sentences.\n"
     "- Do NOT return structured categories\n\n"
-
     "Output format:\n"
     "{\n"
     '  "AAPL": "summary text...",\n'
@@ -236,7 +234,9 @@ def get_risk_signals_for_tickers(tickers, client):
 
 def get_ticker_summary(tickers, client, positive_bias=False):
 
-    ticker_docs = _ticker_docs_from_index(tickers)
+    ticker_docs = _ticker_docs_from_index(
+        tickers, max_articles_per_ticker=40, max_summary_chars=200, max_headline_chars=150
+    )
 
     messages = [
         {"role": "system", "content": _TICKERS_SUMMARY_PROMPT},
@@ -256,7 +256,9 @@ def get_ticker_summary(tickers, client, positive_bias=False):
     return parsed if isinstance(parsed, dict) else {}
 
 
-def get_ai_ticker_ranking(tickers, client, free_text_query="", max_articles_per_ticker=5, max_summary_chars=200, max_headline_chars=150):
+def get_ai_ticker_ranking(
+    tickers, client, free_text_query="", max_articles_per_ticker=5, max_summary_chars=200, max_headline_chars=150
+):
 
     from services.recommender import INDEX
 
