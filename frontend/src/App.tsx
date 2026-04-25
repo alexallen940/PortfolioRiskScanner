@@ -159,6 +159,27 @@ async function fetchRecommendationDescriptions(
   return withDescriptions;
 }
 
+async function fetchRecommendationSummaries(
+  tickers: string[],
+): Promise<Record<string, string>> {
+  if (tickers.length === 0) {
+    return {};
+  }
+
+  try {
+    const data = await postJson<Record<string, string>>(
+      "/api/portfolio/recommendations-summary",
+      {
+        tickers,
+        positive_bias: false,
+      },
+    );
+    return data;
+  } catch {
+    return {};
+  }
+}
+
 function formatNumber(value: number | undefined, digits = 4): string {
   if (value === undefined || Number.isNaN(value)) {
     return "N/A";
@@ -212,15 +233,16 @@ function App(): JSX.Element {
   const [csvLoadMessage, setCsvLoadMessage] = useState("");
   const [results, setResults] = useState<ScanResponse | null>(null);
   const [isLoading, setIsLoading] = useState(false);
-  const [selectedRecommendation, setSelectedRecommendation] =
-    useState<Recommendation | null>(null);
+  const [expandedRecommendationKey, setExpandedRecommendationKey] = useState<
+    string | null
+  >(null);
   const [isFormulaOpen, setIsFormulaOpen] = useState(false);
   const [suggestionsTab, setSuggestionsTab] = useState<"ir" | "llm">("llm");
 
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent): void => {
       if (event.key === "Escape") {
-        setSelectedRecommendation(null);
+        setExpandedRecommendationKey(null);
         setIsFormulaOpen(false);
       }
     };
@@ -360,22 +382,35 @@ function App(): JSX.Element {
         .slice(0, 4)
         .map(mapRec);
 
+      const summaryByTicker = await fetchRecommendationSummaries(
+        baseIrRecommendations.map((rec) => rec.ticker),
+      );
+
+      const withSummary = (recommendation: Recommendation): Recommendation => ({
+        ...recommendation,
+        llmSummary: summaryByTicker[recommendation.ticker],
+      });
+
       const [recommendations, irRecommendations] = await Promise.all([
         fetchRecommendationDescriptions(baseRecommendations, true),
         fetchRecommendationDescriptions(baseIrRecommendations, false),
       ]);
 
+      const recommendationsWithSummary = recommendations.map(withSummary);
+      const irRecommendationsWithSummary = irRecommendations.map(withSummary);
+
       const response: ScanResponse = {
         baseRiskScore: riskScoreData.risk_score,
         portfolioRiskBreakdown: riskScoreData.risk_breakdown,
         riskTypes: Array.from(new Set(riskTypesData.risk_types)).slice(0, 5),
-        summary: `Generated ${recommendations.length} recommendations for ${parsedPortfolio.length} holdings. Query context: ${queryInput.trim()}`,
-        recommendations,
-        irRecommendations,
+        summary: `Generated ${recommendationsWithSummary.length} recommendations for ${parsedPortfolio.length} holdings. Query context: ${queryInput.trim()}`,
+        recommendations: recommendationsWithSummary,
+        irRecommendations: irRecommendationsWithSummary,
         queryInterpretation: recsData.query_interpretation,
       };
 
       setResults(response);
+      setExpandedRecommendationKey(null);
     } catch (error) {
       const message =
         error instanceof Error
@@ -719,14 +754,14 @@ function App(): JSX.Element {
                   {(suggestionsTab === "llm"
                     ? results.recommendations
                     : results.irRecommendations
-                  ).map((stock, index) => (
-                    <button
-                      key={stock.ticker}
-                      type="button"
-                      className="recommendation-card"
-                      onClick={() => setSelectedRecommendation(stock)}
-                    >
-                      <span className="recommendation-card-copy">
+                  ).map((stock, index) => {
+                    const recommendationKey = `${suggestionsTab}:${stock.ticker}`;
+                    const isExpanded =
+                      expandedRecommendationKey === recommendationKey;
+
+                    return (
+                      <article key={recommendationKey} className="recommendation-card">
+                        <div className="recommendation-card-copy">
                         <span className="suggestion-header">
                           <span className="suggestion-left">
                             <span className="rec-number">#{index + 1}</span>
@@ -779,366 +814,349 @@ function App(): JSX.Element {
                               </li>
                             ))}
                         </ul>
-                      </span>
-                    </button>
-                  ))}
+                        <p className="recommendation-summary">
+                          {stock.llmSummary ??
+                            "Summary unavailable for this recommendation."}
+                        </p>
+                        <button
+                          type="button"
+                          className="recommendation-expand-toggle"
+                          aria-expanded={isExpanded}
+                          onClick={() =>
+                            setExpandedRecommendationKey((current) =>
+                              current === recommendationKey
+                                ? null
+                                : recommendationKey,
+                            )
+                          }
+                        >
+                          {isExpanded ? "Hide details" : "Show details"}
+                        </button>
+
+                        {isExpanded && (
+                          <div className="recommendation-dropdown">
+                            <div className="detail-metrics">
+                              <div className="detail-metric-card">
+                                <span className="detail-metric-label">
+                                  Risk score
+                                </span>
+                                <span className="detail-metric-value">
+                                  {stock.riskScore !== undefined
+                                    ? `${stock.riskScore.toFixed(1)}/10`
+                                    : "N/A"}
+                                </span>
+                              </div>
+                              <div className="detail-metric-card">
+                                <span className="detail-metric-label">
+                                  Similarity
+                                </span>
+                                <span className="detail-metric-value">
+                                  {(stock.similarity * 100).toFixed(1)}%
+                                </span>
+                              </div>
+                              {stock.sentiment && (
+                                <div className="detail-metric-card">
+                                  <span className="detail-metric-label">
+                                    Sentiment
+                                  </span>
+                                  <span className="detail-metric-value">
+                                    {formatSentimentLabel(stock.sentiment.label)}
+                                  </span>
+                                </div>
+                              )}
+                            </div>
+                            {stock.sentiment && (
+                              <p className="sentiment-detail-line">
+                                Average compound score:{" "}
+                                <strong>
+                                  {stock.sentiment.average_compound.toFixed(3)}
+                                </strong>{" "}
+                                based on{" "}
+                                <strong>{stock.sentiment.article_count}</strong>{" "}
+                                recent articles.
+                              </p>
+                            )}
+
+                            <div className="detail-section">
+                              <h4>Risk signal notes</h4>
+                              <ul className="signal-bullets detail-bullets">
+                                {stock.descriptionDetails?.length
+                                  ? stock.descriptionDetails.map(
+                                      (detail, bulletIndex) => (
+                                        <li
+                                          key={`${stock.ticker}-detail-${bulletIndex}`}
+                                        >
+                                          <span className="risk-bullet-text">
+                                            {detail.bullet}
+                                          </span>
+                                          {detail.headlines.length > 0 && (
+                                            <>
+                                              <div className="headlines-label">
+                                                Relevant headlines:
+                                              </div>
+                                              <ul className="headline-samples">
+                                                {detail.headlines.map((hl, hlIndex) => (
+                                                  <li
+                                                    key={`${stock.ticker}-hl-${bulletIndex}-${hlIndex}`}
+                                                  >
+                                                    {hl.url ? (
+                                                      <a
+                                                        href={hl.url}
+                                                        target="_blank"
+                                                        rel="noopener noreferrer"
+                                                      >
+                                                        {hl.title}
+                                                      </a>
+                                                    ) : (
+                                                      hl.title
+                                                    )}
+                                                  </li>
+                                                ))}
+                                              </ul>
+                                            </>
+                                          )}
+                                        </li>
+                                      ),
+                                    )
+                                  : (
+                                      stock.description ?? [
+                                        "No risk summary available yet.",
+                                      ]
+                                    ).map((bullet, bulletIndex) => (
+                                      <li key={`${stock.ticker}-${bulletIndex}`}>
+                                        {bullet}
+                                      </li>
+                                    ))}
+                              </ul>
+                            </div>
+
+                            <div className="detail-section">
+                              <h4>Similarity score calculation</h4>
+                              <p className="formula-line">
+                                Similarity is cosine similarity between your
+                                weighted query and this stock profile. Weights
+                                used in this run: portfolio ={" "}
+                                <strong>
+                                  {stock.similarityExplanation
+                                    ?.portfolio_weight ?? 1}
+                                </strong>
+                                , free-text query ={" "}
+                                <strong>
+                                  {stock.similarityExplanation?.text_weight ??
+                                    150}
+                                </strong>{" "}
+                                (
+                                {queryWeightLabel(
+                                  (stock.similarityExplanation
+                                    ?.text_weight_level as
+                                    | "low"
+                                    | "medium"
+                                    | "high") || "medium",
+                                )}
+                                ).
+                              </p>
+                              {stock.similarityExplanation && (
+                                <>
+                                  <p className="formula-line">
+                                    Formula: similarity = dot(query, stock) /
+                                    (||query|| x ||stock||)
+                                  </p>
+                                  <p className="formula-line">
+                                    Filled values:{" "}
+                                    {formatNumber(
+                                      stock.similarityExplanation.dot_product,
+                                      6,
+                                    )}{" "}
+                                    / (
+                                    {formatNumber(
+                                      stock.similarityExplanation.query_norm,
+                                      6,
+                                    )}{" "}
+                                    x{" "}
+                                    {formatNumber(
+                                      stock.similarityExplanation.stock_norm,
+                                      6,
+                                    )}
+                                    ) ={" "}
+                                    <strong>
+                                      {formatNumber(
+                                        stock.similarityExplanation
+                                          .similarity_score,
+                                        6,
+                                      )}
+                                    </strong>
+                                  </p>
+                                </>
+                              )}
+                              {stock.similarityExplanation?.top_drivers
+                                ?.length ? (
+                                <ul className="formula-parts similarity-parts">
+                                  {stock.similarityExplanation.top_drivers
+                                    .slice(0, 3)
+                                    .map((driver, driverIndex) => (
+                                      <li key={`${stock.ticker}-driver-${driverIndex}`}>
+                                        {driver.term ? (
+                                          <>
+                                            Shared term <strong>{driver.term}</strong>
+                                          </>
+                                        ) : (
+                                          <>
+                                            <strong>
+                                              {driver.label ??
+                                                `Latent dimension ${driver.dimension}`}
+                                            </strong>{" "}
+                                            ({`dimension ${driver.dimension}`})
+                                            {driver.relationship
+                                              ? ` | Relationship: ${driver.relationship}`
+                                              : ""}
+                                            {driver.top_positive_terms?.length
+                                              ? ` | Positive terms: ${driver.top_positive_terms.join(", ")}`
+                                              : ""}
+                                            {driver.top_negative_terms?.length
+                                              ? ` | Negative terms: ${driver.top_negative_terms.join(", ")}`
+                                              : ""}
+                                          </>
+                                        )}
+                                      </li>
+                                    ))}
+                                </ul>
+                              ) : (
+                                <p className="formula-line">
+                                  No term-level similarity drivers were
+                                  available for this recommendation.
+                                </p>
+                              )}
+                            </div>
+
+                            {stock.riskBreakdown && (
+                              <div className="detail-section formula-breakdown-section">
+                                <h4>Risk score calculation</h4>
+                                <div className="formula-grid">
+                                  <div className="formula-column">
+                                    <p className="formula-subheading">
+                                      General formula
+                                    </p>
+                                    <p className="formula-line">
+                                      Raw Risk Score = 0.30(AV) + 0.25(MDD) +
+                                      0.20(VaR) + 0.15(DV) + 0.10*(1/(ADV+1))
+                                    </p>
+                                    <p className="formula-line">
+                                      Final risk score is the raw risk score
+                                      normalized to a 10 scale and rounded to 2
+                                      decimal places.
+                                    </p>
+                                  </div>
+                                  <div className="formula-column">
+                                    <p className="formula-subheading">
+                                      This suggestion&apos;s values
+                                    </p>
+                                    <p className="formula-line">
+                                      Raw Risk Score ={" "}
+                                      {formatWeight(
+                                        stock.riskBreakdown.weights
+                                          .annualized_volatility,
+                                      )}
+                                      *
+                                      {formatNumber(
+                                        stock.riskBreakdown.components
+                                          .annualized_volatility,
+                                      )}{" "}
+                                      +{" "}
+                                      {formatWeight(
+                                        stock.riskBreakdown.weights.max_drawdown,
+                                      )}
+                                      *
+                                      {formatNumber(
+                                        stock.riskBreakdown.components
+                                          .max_drawdown_abs,
+                                      )}{" "}
+                                      +{" "}
+                                      {formatWeight(
+                                        stock.riskBreakdown.weights.var_95,
+                                      )}
+                                      *
+                                      {formatNumber(
+                                        stock.riskBreakdown.components.var_95_abs,
+                                      )}{" "}
+                                      +{" "}
+                                      {formatWeight(
+                                        stock.riskBreakdown.weights
+                                          .downside_volatility,
+                                      )}
+                                      *
+                                      {formatNumber(
+                                        stock.riskBreakdown.components
+                                          .downside_volatility,
+                                      )}{" "}
+                                      +{" "}
+                                      {formatWeight(
+                                        stock.riskBreakdown.weights
+                                          .avg_daily_volume_inverse,
+                                      )}
+                                      *
+                                      {formatNumber(
+                                        stock.riskBreakdown.components
+                                          .avg_daily_volume_inverse,
+                                        8,
+                                      )}{" "}
+                                      ={" "}
+                                      <strong>
+                                        {formatNumber(
+                                          stock.riskBreakdown.raw_score_from_formula,
+                                          6,
+                                        )}
+                                      </strong>
+                                    </p>
+                                    <p className="formula-line">
+                                      Final Risk Score ={" "}
+                                      <strong>
+                                        {stock.riskBreakdown.normalized_score.toFixed(
+                                          2,
+                                        )}
+                                      </strong>
+                                    </p>
+                                  </div>
+                                </div>
+
+                                <p className="formula-subheading">
+                                  Formula terms
+                                </p>
+                                <ul className="formula-parts">
+                                  <li>
+                                    AV: annualized volatility, a measure of risk
+                                    based on historical price fluctuations.
+                                  </li>
+                                  <li>
+                                    MDD: maximum drawdown, largest peak-to-trough
+                                    decline before a new peak.
+                                  </li>
+                                  <li>
+                                    VaR (95%): expected worst loss with 95%
+                                    confidence.
+                                  </li>
+                                  <li>
+                                    DV: downside volatility, volatility of returns
+                                    below target.
+                                  </li>
+                                  <li>
+                                    ADV: average daily trading volume, used as
+                                    liquidity proxy.
+                                  </li>
+                                </ul>
+                              </div>
+                            )}
+                          </div>
+                        )}
+                        </div>
+                      </article>
+                    );
+                  })}
                 </div>
               </div>
             </>
           )}
         </section>
       </section>
-
-      {selectedRecommendation && (
-        <div
-          className="modal-backdrop"
-          role="presentation"
-          onClick={() => setSelectedRecommendation(null)}
-        >
-          <section
-            className="detail-modal"
-            role="dialog"
-            aria-modal="true"
-            aria-labelledby="recommendation-title"
-            onClick={(event) => event.stopPropagation()}
-          >
-            <div className="detail-modal-header">
-              <div>
-                <p className="modal-kicker">Suggestion detail</p>
-                <div className="modal-title-row">
-                  <h3 id="recommendation-title">
-                    {selectedRecommendation.companyName ??
-                      selectedRecommendation.ticker}
-                  </h3>
-                  <div className="modal-ticker-row">
-                    <StockLogo
-                      ticker={selectedRecommendation.ticker}
-                      companyName={selectedRecommendation.companyName}
-                      logoUrl={selectedRecommendation.logoUrl}
-                    />
-                    <p className="modal-subtitle">
-                      {selectedRecommendation.ticker}
-                    </p>
-                  </div>
-                </div>
-              </div>
-              <button
-                type="button"
-                className="modal-close"
-                aria-label="Close suggestion details"
-                onClick={() => setSelectedRecommendation(null)}
-              >
-                ×
-              </button>
-            </div>
-
-            <div className="detail-metrics">
-              <div className="detail-metric-card">
-                <span className="detail-metric-label">Risk score</span>
-                <span className="detail-metric-value">
-                  {selectedRecommendation.riskScore !== undefined
-                    ? `${selectedRecommendation.riskScore.toFixed(1)}/10`
-                    : "N/A"}
-                </span>
-              </div>
-              <div className="detail-metric-card">
-                <span className="detail-metric-label">Similarity</span>
-                <span className="detail-metric-value">
-                  {(selectedRecommendation.similarity * 100).toFixed(1)}%
-                </span>
-              </div>
-              {selectedRecommendation.sentiment && (
-                <div className="detail-metric-card">
-                  <span className="detail-metric-label">Sentiment</span>
-                  <span className="detail-metric-value">
-                    {formatSentimentLabel(
-                      selectedRecommendation.sentiment.label,
-                    )}
-                  </span>
-                </div>
-              )}
-            </div>
-            {selectedRecommendation.sentiment && (
-              <p className="sentiment-detail-line">
-                Average compound score:{" "}
-                <strong>
-                  {selectedRecommendation.sentiment.average_compound.toFixed(3)}
-                </strong>{" "}
-                based on{" "}
-                <strong>
-                  {selectedRecommendation.sentiment.article_count}
-                </strong>{" "}
-                recent articles.
-              </p>
-            )}
-
-            <div className="detail-section">
-              <h4>Risk signal notes</h4>
-              <ul className="signal-bullets detail-bullets">
-                {selectedRecommendation.descriptionDetails?.length
-                  ? selectedRecommendation.descriptionDetails.map(
-                      (detail, bulletIndex) => (
-                        <li
-                          key={`${selectedRecommendation.ticker}-detail-${bulletIndex}`}
-                        >
-                          <span className="risk-bullet-text">
-                            {detail.bullet}
-                          </span>
-                          {detail.headlines.length > 0 && (
-                            <>
-                              <div className="headlines-label">
-                                Relevant headlines:
-                              </div>
-                              <ul className="headline-samples">
-                                {detail.headlines.map((hl, hlIndex) => (
-                                  <li
-                                    key={`${selectedRecommendation.ticker}-hl-${bulletIndex}-${hlIndex}`}
-                                  >
-                                    {hl.url ? (
-                                      <a
-                                        href={hl.url}
-                                        target="_blank"
-                                        rel="noopener noreferrer"
-                                      >
-                                        {hl.title}
-                                      </a>
-                                    ) : (
-                                      hl.title
-                                    )}
-                                  </li>
-                                ))}
-                              </ul>
-                            </>
-                          )}
-                        </li>
-                      ),
-                    )
-                  : (
-                      selectedRecommendation.description ?? [
-                        "No risk summary available yet.",
-                      ]
-                    ).map((bullet, bulletIndex) => (
-                      <li
-                        key={`${selectedRecommendation.ticker}-${bulletIndex}`}
-                      >
-                        {bullet}
-                      </li>
-                    ))}
-              </ul>
-            </div>
-
-            <div className="detail-section">
-              <h4>Similarity score calculation</h4>
-              <p className="formula-line">
-                Similarity is cosine similarity between your weighted query and
-                this stock profile. Weights used in this run: portfolio ={" "}
-                <strong>
-                  {selectedRecommendation.similarityExplanation
-                    ?.portfolio_weight ?? 1}
-                </strong>
-                , free-text query ={" "}
-                <strong>
-                  {selectedRecommendation.similarityExplanation?.text_weight ??
-                    150}
-                </strong>{" "}
-                (
-                {queryWeightLabel(
-                  (selectedRecommendation.similarityExplanation
-                    ?.text_weight_level as "low" | "medium" | "high") ||
-                    "medium",
-                )}
-                ).
-              </p>
-              {selectedRecommendation.similarityExplanation && (
-                <>
-                  <p className="formula-line">
-                    Formula: similarity = dot(query, stock) / (||query|| x
-                    ||stock||)
-                  </p>
-                  <p className="formula-line">
-                    Filled values:{" "}
-                    {formatNumber(
-                      selectedRecommendation.similarityExplanation.dot_product,
-                      6,
-                    )}{" "}
-                    / (
-                    {formatNumber(
-                      selectedRecommendation.similarityExplanation.query_norm,
-                      6,
-                    )}{" "}
-                    x{" "}
-                    {formatNumber(
-                      selectedRecommendation.similarityExplanation.stock_norm,
-                      6,
-                    )}
-                    ) ={" "}
-                    <strong>
-                      {formatNumber(
-                        selectedRecommendation.similarityExplanation
-                          .similarity_score,
-                        6,
-                      )}
-                    </strong>
-                  </p>
-                </>
-              )}
-              {selectedRecommendation.similarityExplanation?.top_drivers
-                ?.length ? (
-                <ul className="formula-parts similarity-parts">
-                  {selectedRecommendation.similarityExplanation.top_drivers
-                    .slice(0, 3)
-                    .map((driver, driverIndex) => (
-                      <li
-                        key={`${selectedRecommendation.ticker}-driver-${driverIndex}`}
-                      >
-                        {driver.term ? (
-                          <>
-                            Shared term <strong>{driver.term}</strong>
-                            {/* contributed <strong>{formatNumber(driver.contribution, 6)}</strong> */}
-                          </>
-                        ) : (
-                          <>
-                            <strong>
-                              {driver.label ??
-                                `Latent dimension ${driver.dimension}`}
-                            </strong>{" "}
-                            ({`dimension ${driver.dimension}`})
-                            {/* contributed <strong>{formatNumber(driver.contribution, 6)}</strong> (query {formatNumber(driver.query_value, 4)} x stock {formatNumber(driver.stock_value, 4)}) */}
-                            {driver.relationship
-                              ? ` | Relationship: ${driver.relationship}`
-                              : ""}
-                            {driver.top_positive_terms?.length
-                              ? ` | Positive terms: ${driver.top_positive_terms.join(", ")}`
-                              : ""}
-                            {driver.top_negative_terms?.length
-                              ? ` | Negative terms: ${driver.top_negative_terms.join(", ")}`
-                              : ""}
-                          </>
-                        )}
-                      </li>
-                    ))}
-                </ul>
-              ) : (
-                <p className="formula-line">
-                  No term-level similarity drivers were available for this
-                  recommendation.
-                </p>
-              )}
-            </div>
-
-            {selectedRecommendation.riskBreakdown && (
-              <div className="detail-section formula-breakdown-section">
-                <h4>Risk score calculation</h4>
-                <div className="formula-grid">
-                  <div className="formula-column">
-                    <p className="formula-subheading">General formula</p>
-                    <p className="formula-line">
-                      Raw Risk Score = 0.30(AV) + 0.25(MDD) + 0.20(VaR) +
-                      0.15(DV) + 0.10*(1/(ADV+1))
-                    </p>
-                    <p className="formula-line">
-                      Final risk score is the raw risk score normalized to a 10
-                      scale and rounded to 2 decimal places.
-                    </p>
-                  </div>
-                  <div className="formula-column">
-                    <p className="formula-subheading">
-                      This suggestion&apos;s values
-                    </p>
-                    <p className="formula-line">
-                      Raw Risk Score ={" "}
-                      {formatWeight(
-                        selectedRecommendation.riskBreakdown.weights
-                          .annualized_volatility,
-                      )}
-                      *
-                      {formatNumber(
-                        selectedRecommendation.riskBreakdown.components
-                          .annualized_volatility,
-                      )}{" "}
-                      +{" "}
-                      {formatWeight(
-                        selectedRecommendation.riskBreakdown.weights
-                          .max_drawdown,
-                      )}
-                      *
-                      {formatNumber(
-                        selectedRecommendation.riskBreakdown.components
-                          .max_drawdown_abs,
-                      )}{" "}
-                      +{" "}
-                      {formatWeight(
-                        selectedRecommendation.riskBreakdown.weights.var_95,
-                      )}
-                      *
-                      {formatNumber(
-                        selectedRecommendation.riskBreakdown.components
-                          .var_95_abs,
-                      )}{" "}
-                      +{" "}
-                      {formatWeight(
-                        selectedRecommendation.riskBreakdown.weights
-                          .downside_volatility,
-                      )}
-                      *
-                      {formatNumber(
-                        selectedRecommendation.riskBreakdown.components
-                          .downside_volatility,
-                      )}{" "}
-                      +{" "}
-                      {formatWeight(
-                        selectedRecommendation.riskBreakdown.weights
-                          .avg_daily_volume_inverse,
-                      )}
-                      *
-                      {formatNumber(
-                        selectedRecommendation.riskBreakdown.components
-                          .avg_daily_volume_inverse,
-                        8,
-                      )}{" "}
-                      ={" "}
-                      <strong>
-                        {formatNumber(
-                          selectedRecommendation.riskBreakdown
-                            .raw_score_from_formula,
-                          6,
-                        )}
-                      </strong>
-                    </p>
-                    <p className="formula-line">
-                      Final Risk Score ={" "}
-                      <strong>
-                        {selectedRecommendation.riskBreakdown.normalized_score.toFixed(
-                          2,
-                        )}
-                      </strong>
-                    </p>
-                  </div>
-                </div>
-
-                <p className="formula-subheading">Formula terms</p>
-                <ul className="formula-parts">
-                  <li>
-                    AV: annualized volatility, a measure of risk based on
-                    historical price fluctuations.
-                  </li>
-                  <li>
-                    MDD: maximum drawdown, largest peak-to-trough decline before
-                    a new peak.
-                  </li>
-                  <li>VaR (95%): expected worst loss with 95% confidence.</li>
-                  <li>
-                    DV: downside volatility, volatility of returns below target.
-                  </li>
-                  <li>
-                    ADV: average daily trading volume, used as liquidity proxy.
-                  </li>
-                </ul>
-              </div>
-            )}
-          </section>
-        </div>
-      )}
     </main>
   );
 }

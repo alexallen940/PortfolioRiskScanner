@@ -115,6 +115,7 @@ export interface Recommendation {
   logoUrl?: string
   description?: string[]
   descriptionDetails?: DescriptionDetail[]
+  llmSummary?: string
   sentiment?: RecommendationSentiment
 }
 
