@@ -101,6 +101,18 @@ def _website_to_domain(website):
 
     return domain or None
 
+def get_article_url(ticker, headline):
+    exact_url = INDEX.article_link_lookup.get((ticker, headline))
+    if exact_url:
+        return exact_url
+
+    normalized_headline = headline.strip().lower()
+    for (stored_ticker, stored_headline), url in INDEX.article_link_lookup.items():
+        if stored_ticker == ticker and stored_headline.strip().lower() == normalized_headline:
+            return url
+
+    return None
+
 
 def _fetch_yfinance_metadata(ticker):
     ticker = ticker.upper().strip()
@@ -153,6 +165,13 @@ def _enrich_with_yfinance(results):
         enriched.append(merged)
 
     return enriched
+
+def get_signal_count(signal):
+    if isinstance(signal, dict):
+        return signal.get("count", 0)
+    if isinstance(signal, int):
+        return signal
+    return 0
 
 
 SENTIMENT_ANALYZER = SentimentIntensityAnalyzer()
@@ -626,16 +645,18 @@ def get_recommendation_desc(
                 docs = ticker_docs.get(ticker)
                 top_risks = sorted(
                     risk_types.items(),
-                    key=lambda kv: sum(signal["count"] for signal in kv[1].values()),
+                    key=lambda kv: sum(get_signal_count(signal) for signal in kv[1].values()),
                     reverse=True,
                 )[:top_k_risk_types]
+
+                articles = INDEX.ticker_article_rows.get(ticker, [])
 
                 for risk_type_idx, (risk_type, signals) in enumerate(top_risks):
                     if not signals:
                         continue
                     top_signal_items = sorted(
                         signals.items(),
-                        key=lambda kv: kv[1]["count"],
+                        key=lambda kv: get_signal_count(kv[1]),
                         reverse=True,
                     )[:top_k_risk_signals]
 
@@ -644,17 +665,18 @@ def get_recommendation_desc(
 
                     article_indices = []
                     for _, info in top_signal_items:
-                        for i in info.get("article_indices"):
-                            if i not in article_indices:
-                                article_indices.append(i)
+                        if isinstance (info, dict):
+                            for i in info.get("article_indices"):
+                                if i not in article_indices:
+                                    article_indices.append(i)
 
                     headlines = [
                         {
-                            "title": docs[i]["headline"],
-                            "url": ARTICLE_LINK_LOOKUP.get((ticker, docs[i]["headline"])),
+                            "title": articles[i].headline,
+                            "url": get_article_url(ticker, articles[i].headline),
                         }
                         for i in article_indices
-                        if 0 <= i < len(docs) and docs[i].get("headline")
+                        if 0 <= i < len(articles)
                     ][:k_headlines]
 
                     bullet = f"{risk_type} due to {signal_text} risk signals"
@@ -701,7 +723,7 @@ def get_recommendation_desc(
                     headline_hits[risk_type].append(
                         {
                             "title": article.headline,
-                            "url": ARTICLE_LINK_LOOKUP.get((normalized_ticker, article.headline)),
+                            "url": INDEX.article_link_lookup.get((normalized_ticker, article.headline)),
                         }
                     )
 
