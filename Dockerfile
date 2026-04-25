@@ -24,10 +24,12 @@ RUN python -m nltk.downloader -d /usr/local/nltk_data vader_lexicon
 FROM python:3.10-slim
 
 ENV CONTAINER_HOME=/var/www
+ENV NLTK_DATA=/usr/local/nltk_data
 
 WORKDIR $CONTAINER_HOME
 
 COPY --from=python-deps /usr/local/lib/python3.10/site-packages /usr/local/lib/python3.10/site-packages
+COPY --from=python-deps /usr/local/nltk_data /usr/local/nltk_data
 COPY src/ $CONTAINER_HOME/src/
 COPY data/ $CONTAINER_HOME/data/
 COPY --from=frontend-build /app/frontend/dist $CONTAINER_HOME/frontend/dist
