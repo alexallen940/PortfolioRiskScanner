@@ -122,6 +122,8 @@ def _load_company_metadata_from_articles():
 
     return metadata
 
+def normalize_headline(h):
+    return h.strip().lower()
 
 def _load_article_link_lookup():
     article_links = {}
@@ -129,7 +131,7 @@ def _load_article_link_lookup():
     if not os.path.exists(articles_csv_path):
         return article_links
 
-    with open(articles_csv_path, "r") as file:
+    with open(articles_csv_path, "r", encoding="utf-8-sig", newline="") as file:
         reader = csv.DictReader(file)
         for row in reader:
             ticker = (row.get("ticker") or "").strip().upper()

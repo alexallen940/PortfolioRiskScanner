@@ -122,8 +122,26 @@ _TICKERS_SUMMARY_PROMPT = (
     "- headline\n"
     "- text\n\n"
     "Your task:\n"
-    "For each ticker, return a nested JSON object where:\n"
-    "- each ticker has a summary of the ticker's articles.\n\n"
+    "For each ticker, write a concise 2-3 sentence summary describing:\n"
+    "- key risks\n"
+    "- business context\n"
+    "- overall outlook\n\n"
+
+    "Guidelines:\n"
+    "- Be specific and grounded in the articles\n"
+    "- If positive_bias is true, emphasize strengths\n"
+    "- If false, emphasize risk factors and weaknesses\n"
+    "- Do NOT list bullet points\n"
+    "- Use specific, concrete language grounded in the provided articles.\n"
+    "- Keep summaries to 2-3 sentences max.\n"
+    "- Do not repeat the same idea across sentences.\n"
+    "- Do NOT return structured categories\n\n"
+
+    "Output format:\n"
+    "{\n"
+    '  "AAPL": "summary text...",\n'
+    '  "NVDA": "summary text..."\n'
+    "}\n"
 )
 
 _AI_TICKER_RANKING_PROMPT = (
