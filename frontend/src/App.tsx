@@ -18,6 +18,7 @@ function StockLogo({
   companyName?: string;
   logoUrl?: string;
 }): JSX.Element {
+  
   const [hasImageError, setHasImageError] = useState(false);
 
   if (logoUrl && !hasImageError) {
@@ -238,6 +239,20 @@ function App(): JSX.Element {
   >(null);
   const [isFormulaOpen, setIsFormulaOpen] = useState(false);
   const [suggestionsTab, setSuggestionsTab] = useState<"ir" | "llm">("llm");
+  const [theme, setTheme] = useState<"light" | "dark">(() => {
+  const stored = localStorage.getItem("theme");
+
+  if (stored === "light" || stored === "dark") return stored;
+  
+  return window.matchMedia("(prefers-color-scheme: dark)").matches
+    ? "dark"
+    : "light";
+  });
+
+  useEffect(() => {
+    document.documentElement.setAttribute("data-theme", theme);
+    localStorage.setItem("theme", theme);
+  }, [theme]);  
 
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent): void => {
@@ -299,11 +314,11 @@ function App(): JSX.Element {
       return;
     }
 
-    if (queryInput.trim().length === 0) {
-      setValidationMessage("Enter at least one desired stock characteristic.");
-      setResults(null);
-      return;
-    }
+    // if (queryInput.trim().length === 0) {
+    //   setValidationMessage("Enter at least one desired stock characteristic.");
+    //   setResults(null);
+    //   return;
+    // }
 
     setValidationMessage("");
     setIsLoading(true);
@@ -428,7 +443,17 @@ function App(): JSX.Element {
       <div className="page-orb page-orb-left" aria-hidden="true" />
       <div className="page-orb page-orb-right" aria-hidden="true" />
       <header className="site-header">
-        <h1 className="site-title">Portfolio Risk Scanner</h1>
+        <div className="site-header-top">
+          <h1 className="site-title">Portfolio Risk Scanner</h1>
+          <button
+            type="button"
+            className="theme-toggle"
+            onClick={() => setTheme((t) => (t === "light" ? "dark" : "light"))}
+            aria-label={`Switch to ${theme === "light" ? "dark" : "light"} mode`}
+          >
+            {theme === "light" ? "🌙" : "☀️"}
+          </button>
+        </div>
         <p className="site-description">
           Enter your current holdings and describe the kind of stock you want to
           add. The tool returns a portfolio risk score and recommended stocks
@@ -437,15 +462,16 @@ function App(): JSX.Element {
       </header>
 
       <section className="workspace-grid">
-        <form className="control-panel" onSubmit={handleSubmit}>
+      <form className="control-panel-form" onSubmit={handleSubmit}>
+        <section className="control-panel">
           <div className="panel-header">
-            <h2>Search Inputs</h2>
+            <h2>Portfolio</h2>
             <p>
               Provide a list of your portfolio tickers using the portfolio text
               box (separated by commas) and/or a CSV file (separated by
               whitespace, commas, or cells, though a ticker column would be
               optimal). All inputted tickers will be included across the text
-              box and CSV.{" "}
+              box and CSV.
             </p>
           </div>
 
@@ -477,8 +503,11 @@ function App(): JSX.Element {
               </small>
             )}
           </label>
+        </section>
 
-          <label className="field-block" htmlFor="query-input">
+        <section className="control-panel">
+          <div className="panel-header">
+            <h2>Query</h2>
             <p>
               Describe the risk profile, industry, or other characteristics in
               plain language.
@@ -488,6 +517,9 @@ function App(): JSX.Element {
               the risk bullet points are based on each stock&apos;s risk-signal
               analysis and may not directly reflect your query wording.
             </p>
+          </div>
+
+          <label className="field-block" htmlFor="query-input">
             <span>Desired stock characteristics</span>
             <textarea
               id="query-input"
@@ -503,6 +535,7 @@ function App(): JSX.Element {
             <select
               id="query-weight-level"
               value={queryWeightLevel}
+              disabled={queryInput.trim().length === 0}
               onChange={(event) =>
                 setQueryWeightLevel(
                   event.target.value as "low" | "medium" | "high",
@@ -518,7 +551,9 @@ function App(): JSX.Element {
               influences matching.
             </small>
           </label>
+        </section>
 
+        <div className="form-actions">
           <button className="submit-button" type="submit" disabled={isLoading}>
             {isLoading ? "Running scan..." : "Generate matches"}
           </button>
@@ -526,7 +561,8 @@ function App(): JSX.Element {
           {validationMessage && (
             <p className="validation-message">{validationMessage}</p>
           )}
-        </form>
+        </div>
+      </form>
 
         <section className="results-panel">
           <div className="panel-header">
