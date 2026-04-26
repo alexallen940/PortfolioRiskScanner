@@ -550,20 +550,6 @@ function App(): JSX.Element {
                       {results.queryInterpretation.interpreted}
                     </span>
                   </div>
-                  {Object.keys(results.queryInterpretation.corrections).length >
-                    0 && (
-                      <div className="query-interp-corrections">
-                        {Object.entries(
-                          results.queryInterpretation.corrections,
-                        ).map(([from, to]) => (
-                          <span key={from} className="correction-chip">
-                            <span className="correction-from">{from}</span>
-                            <span className="correction-arrow">→</span>
-                            <span className="correction-to">{to}</span>
-                          </span>
-                        ))}
-                      </div>
-                    )}
                 </div>
               )}
               <div className="risk-score-section">
@@ -747,8 +733,8 @@ function App(): JSX.Element {
                 </div>
                 <p className="suggestions-tab-note">
                   {suggestionsTab === "ir"
-                    ? "Ranked by cosine similarity between your query and each stock's article profile (no LLM)."
-                    : "Re-ranked by AI using the expanded query and article evidence."}
+                    ? "Ranked by cosine similarity between your query and each stock's article profile."
+                    : "Re-rankings, risk signal refinement, and ticker summary by AI using the expanded query and article evidence."}
                 </p>
                 <div className="recommendation-list">
                   {(suggestionsTab === "llm"
@@ -814,10 +800,12 @@ function App(): JSX.Element {
                                 </li>
                               ))}
                           </ul>
-                          <p className="recommendation-summary">
-                            {stock.llmSummary ??
-                              "Summary unavailable for this recommendation."}
-                          </p>
+                          {suggestionsTab === "llm" && (
+                            <p className="recommendation-summary">
+                              {stock.llmSummary ??
+                                "Summary unavailable for this recommendation."}
+                            </p>
+                          )}
                           <button
                             type="button"
                             className="recommendation-expand-toggle"
