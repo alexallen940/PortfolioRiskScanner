@@ -18,7 +18,6 @@ function StockLogo({
   companyName?: string;
   logoUrl?: string;
 }): JSX.Element {
-  
   const [hasImageError, setHasImageError] = useState(false);
 
   if (logoUrl && !hasImageError) {
@@ -240,19 +239,19 @@ function App(): JSX.Element {
   const [isFormulaOpen, setIsFormulaOpen] = useState(false);
   const [suggestionsTab, setSuggestionsTab] = useState<"ir" | "llm">("llm");
   const [theme, setTheme] = useState<"light" | "dark">(() => {
-  const stored = localStorage.getItem("theme");
+    const stored = localStorage.getItem("theme");
 
-  if (stored === "light" || stored === "dark") return stored;
-  
-  return window.matchMedia("(prefers-color-scheme: dark)").matches
-    ? "dark"
-    : "light";
+    if (stored === "light" || stored === "dark") return stored;
+
+    return window.matchMedia("(prefers-color-scheme: dark)").matches
+      ? "dark"
+      : "light";
   });
 
   useEffect(() => {
     document.documentElement.setAttribute("data-theme", theme);
     localStorage.setItem("theme", theme);
-  }, [theme]);  
+  }, [theme]);
 
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent): void => {
@@ -456,113 +455,119 @@ function App(): JSX.Element {
         </div>
         <p className="site-description">
           Enter your current holdings and describe the kind of stock you want to
-          add. The tool returns a portfolio risk score and recommended stocks
-          with desired characteristics and risk signal context.
+          add. The tool returns a portfolio risk score and stocks similar to
+          your portfolio with your desired characteristics and risk signal
+          context.
         </p>
       </header>
 
       <section className="workspace-grid">
-      <form className="control-panel-form" onSubmit={handleSubmit}>
-        <section className="control-panel">
-          <div className="panel-header">
-            <h2>Portfolio</h2>
-            <p>
-              Provide a list of your portfolio tickers using the portfolio text
-              box (separated by commas) and/or a CSV file (separated by
-              whitespace, commas, or cells, though a ticker column would be
-              optimal). All inputted tickers will be included across the text
-              box and CSV.
-            </p>
-          </div>
+        <form className="control-panel-form" onSubmit={handleSubmit}>
+          <section className="control-panel">
+            <div className="panel-header">
+              <h2>Portfolio</h2>
+              <p>
+                Provide a list of your portfolio tickers using the portfolio
+                text box (separated by commas) and/or a CSV file (separated by
+                whitespace, commas, or cells, though a ticker column would be
+                optimal). All inputted tickers will be included across the text
+                box and CSV.
+              </p>
+            </div>
 
-          <label className="field-block" htmlFor="portfolio-input">
-            <span>Portfolio tickers</span>
-            <textarea
-              id="portfolio-input"
-              value={portfolioInput}
-              onChange={(event) => setPortfolioInput(event.target.value)}
-              placeholder="AAPL, NVDA, JPM"
-              rows={4}
-            />
-          </label>
+            <label className="field-block" htmlFor="portfolio-input">
+              <span>Portfolio tickers</span>
+              <textarea
+                id="portfolio-input"
+                value={portfolioInput}
+                onChange={(event) => setPortfolioInput(event.target.value)}
+                placeholder="AAPL, NVDA, JPM"
+                rows={4}
+              />
+            </label>
 
-          <label className="field-block" htmlFor="portfolio-csv-input">
-            <span>Portfolio CSV</span>
-            <input
-              id="portfolio-csv-input"
-              type="file"
-              accept=".csv,text/csv"
-              onChange={handleCsvUpload}
-            />
-            {csvLoadMessage && (
-              <small className="csv-upload-note">{csvLoadMessage}</small>
-            )}
-            {csvFileName && (
+            <label className="field-block" htmlFor="portfolio-csv-input">
+              <span>Portfolio CSV</span>
+              <input
+                id="portfolio-csv-input"
+                type="file"
+                accept=".csv,text/csv"
+                onChange={handleCsvUpload}
+              />
+              {csvLoadMessage && (
+                <small className="csv-upload-note">{csvLoadMessage}</small>
+              )}
+              {csvFileName && (
+                <small className="csv-upload-note">
+                  Using file: {csvFileName}
+                </small>
+              )}
+            </label>
+          </section>
+
+          <section className="control-panel">
+            <div className="panel-header">
+              <h2>Query (Optional)</h2>
+              <p>
+                Describe the risk profile, industry, or other characteristics in
+                plain language.
+              </p>
+              <p className="field-note">
+                Your free-text query influences which stocks are suggested, but
+                the risk bullet points are based on each stock&apos;s
+                risk-signal analysis and may not directly reflect your query
+                wording.
+              </p>
+            </div>
+
+            <label className="field-block" htmlFor="query-input">
+              <span>Desired stock characteristics</span>
+              <textarea
+                id="query-input"
+                value={queryInput}
+                onChange={(event) => setQueryInput(event.target.value)}
+                placeholder="Example: I want lower-volatility healthcare or tech stocks with moderate risk and sensitivity to regulation."
+                rows={6}
+              />
+            </label>
+
+            <label className="field-block" htmlFor="query-weight-level">
+              <span>Free-text query weighting</span>
+              <select
+                id="query-weight-level"
+                value={queryWeightLevel}
+                disabled={queryInput.trim().length === 0}
+                onChange={(event) =>
+                  setQueryWeightLevel(
+                    event.target.value as "low" | "medium" | "high",
+                  )
+                }
+              >
+                <option value="low">Low (110)</option>
+                <option value="medium">Medium (150)</option>
+                <option value="high">High (200)</option>
+              </select>
               <small className="csv-upload-note">
-                Using file: {csvFileName}
+                Controls how strongly your stock characteristics description
+                influences matching.
               </small>
-            )}
-          </label>
-        </section>
+            </label>
+          </section>
 
-        <section className="control-panel">
-          <div className="panel-header">
-            <h2>Query</h2>
-            <p>
-              Describe the risk profile, industry, or other characteristics in
-              plain language.
-            </p>
-            <p className="field-note">
-              Your free-text query influences which stocks are suggested, but
-              the risk bullet points are based on each stock&apos;s risk-signal
-              analysis and may not directly reflect your query wording.
-            </p>
-          </div>
-
-          <label className="field-block" htmlFor="query-input">
-            <span>Desired stock characteristics</span>
-            <textarea
-              id="query-input"
-              value={queryInput}
-              onChange={(event) => setQueryInput(event.target.value)}
-              placeholder="Example: I want lower-volatility healthcare or tech stocks with moderate risk and sensitivity to regulation."
-              rows={6}
-            />
-          </label>
-
-          <label className="field-block" htmlFor="query-weight-level">
-            <span>Free-text query weighting</span>
-            <select
-              id="query-weight-level"
-              value={queryWeightLevel}
-              disabled={queryInput.trim().length === 0}
-              onChange={(event) =>
-                setQueryWeightLevel(
-                  event.target.value as "low" | "medium" | "high",
-                )
-              }
+          <div className="form-actions">
+            <button
+              className="submit-button"
+              type="submit"
+              disabled={isLoading}
             >
-              <option value="low">Low (110)</option>
-              <option value="medium">Medium (150)</option>
-              <option value="high">High (200)</option>
-            </select>
-            <small className="csv-upload-note">
-              Controls how strongly your stock characteristics description
-              influences matching.
-            </small>
-          </label>
-        </section>
+              {isLoading ? "Running scan..." : "Generate matches"}
+            </button>
 
-        <div className="form-actions">
-          <button className="submit-button" type="submit" disabled={isLoading}>
-            {isLoading ? "Running scan..." : "Generate matches"}
-          </button>
-
-          {validationMessage && (
-            <p className="validation-message">{validationMessage}</p>
-          )}
-        </div>
-      </form>
+            {validationMessage && (
+              <p className="validation-message">{validationMessage}</p>
+            )}
+          </div>
+        </form>
 
         <section className="results-panel">
           <div className="panel-header">
@@ -782,7 +787,10 @@ function App(): JSX.Element {
                       expandedRecommendationKey === recommendationKey;
 
                     return (
-                      <article key={recommendationKey} className="recommendation-card">
+                      <article
+                        key={recommendationKey}
+                        className="recommendation-card"
+                      >
                         <div className="recommendation-card-copy">
                           <span className="suggestion-header">
                             <span className="suggestion-left">
@@ -884,7 +892,9 @@ function App(): JSX.Element {
                                       Sentiment
                                     </span>
                                     <span className="detail-metric-value">
-                                      {formatSentimentLabel(stock.sentiment.label)}
+                                      {formatSentimentLabel(
+                                        stock.sentiment.label,
+                                      )}
                                     </span>
                                   </div>
                                 )}
@@ -893,10 +903,14 @@ function App(): JSX.Element {
                                 <p className="sentiment-detail-line">
                                   Average compound score:{" "}
                                   <strong>
-                                    {stock.sentiment.average_compound.toFixed(3)}
+                                    {stock.sentiment.average_compound.toFixed(
+                                      3,
+                                    )}
                                   </strong>{" "}
                                   based on{" "}
-                                  <strong>{stock.sentiment.article_count}</strong>{" "}
+                                  <strong>
+                                    {stock.sentiment.article_count}
+                                  </strong>{" "}
                                   recent articles.
                                 </p>
                               )}
@@ -906,51 +920,55 @@ function App(): JSX.Element {
                                 <ul className="signal-bullets detail-bullets">
                                   {stock.descriptionDetails?.length
                                     ? stock.descriptionDetails.map(
-                                      (detail, bulletIndex) => (
-                                        <li
-                                          key={`${stock.ticker}-detail-${bulletIndex}`}
-                                        >
-                                          <span className="risk-bullet-text">
-                                            {detail.bullet}
-                                          </span>
-                                          {detail.headlines.length > 0 && (
-                                            <>
-                                              <div className="headlines-label">
-                                                Relevant headlines:
-                                              </div>
-                                              <ul className="headline-samples">
-                                                {detail.headlines.map((hl, hlIndex) => (
-                                                  <li
-                                                    key={`${stock.ticker}-hl-${bulletIndex}-${hlIndex}`}
-                                                  >
-                                                    {hl.url ? (
-                                                      <a
-                                                        href={hl.url}
-                                                        target="_blank"
-                                                        rel="noopener noreferrer"
+                                        (detail, bulletIndex) => (
+                                          <li
+                                            key={`${stock.ticker}-detail-${bulletIndex}`}
+                                          >
+                                            <span className="risk-bullet-text">
+                                              {detail.bullet}
+                                            </span>
+                                            {detail.headlines.length > 0 && (
+                                              <>
+                                                <div className="headlines-label">
+                                                  Relevant headlines:
+                                                </div>
+                                                <ul className="headline-samples">
+                                                  {detail.headlines.map(
+                                                    (hl, hlIndex) => (
+                                                      <li
+                                                        key={`${stock.ticker}-hl-${bulletIndex}-${hlIndex}`}
                                                       >
-                                                        {hl.title}
-                                                      </a>
-                                                    ) : (
-                                                      hl.title
-                                                    )}
-                                                  </li>
-                                                ))}
-                                              </ul>
-                                            </>
-                                          )}
-                                        </li>
-                                      ),
-                                    )
+                                                        {hl.url ? (
+                                                          <a
+                                                            href={hl.url}
+                                                            target="_blank"
+                                                            rel="noopener noreferrer"
+                                                          >
+                                                            {hl.title}
+                                                          </a>
+                                                        ) : (
+                                                          hl.title
+                                                        )}
+                                                      </li>
+                                                    ),
+                                                  )}
+                                                </ul>
+                                              </>
+                                            )}
+                                          </li>
+                                        ),
+                                      )
                                     : (
-                                      stock.description ?? [
-                                        "No risk summary available yet.",
-                                      ]
-                                    ).map((bullet, bulletIndex) => (
-                                      <li key={`${stock.ticker}-${bulletIndex}`}>
-                                        {bullet}
-                                      </li>
-                                    ))}
+                                        stock.description ?? [
+                                          "No risk summary available yet.",
+                                        ]
+                                      ).map((bullet, bulletIndex) => (
+                                        <li
+                                          key={`${stock.ticker}-${bulletIndex}`}
+                                        >
+                                          {bullet}
+                                        </li>
+                                      ))}
                                 </ul>
                               </div>
 
@@ -1018,10 +1036,13 @@ function App(): JSX.Element {
                                     {stock.similarityExplanation.top_drivers
                                       .slice(0, 3)
                                       .map((driver, driverIndex) => (
-                                        <li key={`${stock.ticker}-driver-${driverIndex}`}>
+                                        <li
+                                          key={`${stock.ticker}-driver-${driverIndex}`}
+                                        >
                                           {driver.term ? (
                                             <>
-                                              Shared term <strong>{driver.term}</strong>
+                                              Shared term{" "}
+                                              <strong>{driver.term}</strong>
                                             </>
                                           ) : (
                                             <>
@@ -1029,7 +1050,8 @@ function App(): JSX.Element {
                                                 {driver.label ??
                                                   `Latent dimension ${driver.dimension}`}
                                               </strong>{" "}
-                                              ({`dimension ${driver.dimension}`})
+                                              ({`dimension ${driver.dimension}`}
+                                              )
                                               {driver.relationship
                                                 ? ` | Relationship: ${driver.relationship}`
                                                 : ""}
@@ -1066,8 +1088,8 @@ function App(): JSX.Element {
                                       </p>
                                       <p className="formula-line">
                                         Final risk score is the raw risk score
-                                        normalized to a 10 scale and rounded to 2
-                                        decimal places.
+                                        normalized to a 10 scale and rounded to
+                                        2 decimal places.
                                       </p>
                                     </div>
                                     <div className="formula-column">
@@ -1087,7 +1109,8 @@ function App(): JSX.Element {
                                         )}{" "}
                                         +{" "}
                                         {formatWeight(
-                                          stock.riskBreakdown.weights.max_drawdown,
+                                          stock.riskBreakdown.weights
+                                            .max_drawdown,
                                         )}
                                         *
                                         {formatNumber(
@@ -1100,7 +1123,8 @@ function App(): JSX.Element {
                                         )}
                                         *
                                         {formatNumber(
-                                          stock.riskBreakdown.components.var_95_abs,
+                                          stock.riskBreakdown.components
+                                            .var_95_abs,
                                         )}{" "}
                                         +{" "}
                                         {formatWeight(
@@ -1126,7 +1150,8 @@ function App(): JSX.Element {
                                         ={" "}
                                         <strong>
                                           {formatNumber(
-                                            stock.riskBreakdown.raw_score_from_formula,
+                                            stock.riskBreakdown
+                                              .raw_score_from_formula,
                                             6,
                                           )}
                                         </strong>
@@ -1147,20 +1172,21 @@ function App(): JSX.Element {
                                   </p>
                                   <ul className="formula-parts">
                                     <li>
-                                      AV: annualized volatility, a measure of risk
-                                      based on historical price fluctuations.
+                                      AV: annualized volatility, a measure of
+                                      risk based on historical price
+                                      fluctuations.
                                     </li>
                                     <li>
-                                      MDD: maximum drawdown, largest peak-to-trough
-                                      decline before a new peak.
+                                      MDD: maximum drawdown, largest
+                                      peak-to-trough decline before a new peak.
                                     </li>
                                     <li>
                                       VaR (95%): expected worst loss with 95%
                                       confidence.
                                     </li>
                                     <li>
-                                      DV: downside volatility, volatility of returns
-                                      below target.
+                                      DV: downside volatility, volatility of
+                                      returns below target.
                                     </li>
                                     <li>
                                       ADV: average daily trading volume, used as

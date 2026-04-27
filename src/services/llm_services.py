@@ -69,8 +69,9 @@ _EXPAND_STOCK_QUERY_PROMPT = (
     "Expand the query into a concise search string that preserves the user's intent.\n"
     "Include related industry terms, business characteristics, and synonyms that would help retrieve relevant stocks.\n"
     "Do not mention specific stock tickers, company names, or names of public figures unless the user explicitly included them.\n"
+    "If the user's query is empty, contains no clear descriptors, or carries no meaningful semantic content (e.g., gibberish, filler words, or vague phrases like 'stocks' or 'stuff'), return an empty string.\n"
     "Do not explain your reasoning.\n"
-    "Return ONLY a short expanded query string."
+    "Return ONLY a short expanded query string, or an empty string if the input lacks meaningful content.\n"
 )
 
 _RISK_SIGNALS_TICKERS_PROMPT = (
@@ -234,17 +235,14 @@ def get_risk_signals_for_tickers(tickers, client):
 def get_ticker_summary(tickers, client, positive_bias=False):
 
     ticker_docs = _ticker_docs_from_index(
-        tickers, max_articles_per_ticker=12, max_summary_chars=180, max_headline_chars=120
+        tickers, max_articles_per_ticker=40, max_summary_chars=180, max_headline_chars=120
     )
 
     messages = [
         {"role": "system", "content": _TICKERS_SUMMARY_PROMPT},
         {
             "role": "user",
-            "content": (
-                f"Ticker articles:\n{json.dumps(ticker_docs)}\n"
-                f"Positive bias: {positive_bias}\n"
-            ),
+            "content": (f"Ticker articles:\n{json.dumps(ticker_docs)}\n" f"Positive bias: {positive_bias}\n"),
         },
     ]
 

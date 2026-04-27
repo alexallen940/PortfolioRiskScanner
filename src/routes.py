@@ -142,8 +142,8 @@ def register_routes(app):
         if portfolio_error:
             return portfolio_error
 
-        if not desired_characteristics:
-            return jsonify({"error": "Free text query not provided"}), 400
+        # if not desired_characteristics:
+        #     return jsonify({"error": "Free text query not provided"}), 400
 
         vectorizer = TfidfVectorizer(stop_words="english", max_features=4000, ngram_range=(1, 2), min_df=15, max_df=0.9)
 

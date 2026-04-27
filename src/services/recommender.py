@@ -578,6 +578,11 @@ def get_stock_recommendations(
         except Exception:
             traceback.print_exc()
 
+        # print("original query", desired_characteristics)
+        # print("expanded query", query_for_retrieval)
+        # print("interpreted", corrected_characteristics)
+        # print("corrections", query_corrections)
+
     return {
         "recommendations": top_results,
         "ir_recommendations": ir_results,
