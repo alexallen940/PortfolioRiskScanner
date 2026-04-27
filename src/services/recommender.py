@@ -681,7 +681,8 @@ def get_recommendation_desc(
                         if 0 <= i < len(articles)
                     ][:k_headlines]
 
-                    bullet = f"{risk_type} due to {signal_text} risk signals"
+                    suffix = " in recent news coverage" if risk_type_idx == 0 else ""
+                    bullet = f"{risk_type} due to {signal_text} risk signals{suffix}"
 
                     # print(get_ticker_summary(tickers=[ticker], client=client))
 
@@ -749,7 +750,8 @@ def get_recommendation_desc(
             keywords = list(dict.fromkeys(keyword_hits.get(risk, [])))[:top_k_risk_signals]
 
             if keywords:
-                bullet = f"{risk} due to {' and '.join(keywords)} risk signals"
+                suffix = " in recent news coverage" if i == 0 else ""
+                bullet = f"{risk} due to {' and '.join(keywords)} risk signals{suffix}"
             else:
                 bullet = f"Susceptible to {risk}"
 

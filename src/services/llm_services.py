@@ -115,9 +115,8 @@ _RISK_SIGNALS_TICKERS_PROMPT = (
 
 _TICKERS_SUMMARY_PROMPT = (
     "You will receive:\n"
-    "1) A risk word dictionary where each key is a risk category and each value is a list of risk signal terms.\n"
-    "2) A dictionary mapping stock tickers to a list of article objects.\n"
-    "3) A boolean flag indicating whether to use positive bias and if false, be harsh and find any risk signals you can.\n"
+    "1) A dictionary mapping stock tickers to a list of article objects.\n"
+    "2) A boolean flag indicating whether to use positive bias and if false, be harsh and find any risk signals you can.\n"
     "Each article object has:\n"
     "- headline\n"
     "- text\n\n"
@@ -235,7 +234,7 @@ def get_risk_signals_for_tickers(tickers, client):
 def get_ticker_summary(tickers, client, positive_bias=False):
 
     ticker_docs = _ticker_docs_from_index(
-        tickers, max_articles_per_ticker=40, max_summary_chars=200, max_headline_chars=150
+        tickers, max_articles_per_ticker=12, max_summary_chars=180, max_headline_chars=120
     )
 
     messages = [
@@ -243,7 +242,6 @@ def get_ticker_summary(tickers, client, positive_bias=False):
         {
             "role": "user",
             "content": (
-                f"Risk word bank:\n{RISK_WORD_DICT_JSON}\n\n"
                 f"Ticker articles:\n{json.dumps(ticker_docs)}\n"
                 f"Positive bias: {positive_bias}\n"
             ),
