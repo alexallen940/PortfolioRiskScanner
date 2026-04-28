@@ -1,6 +1,7 @@
 import json
 import os
 import re
+import time
 from infosci_spark_client import LLMClient
 
 
@@ -18,6 +19,29 @@ _EXPAND_CACHE_MAX = 100
 _JSON_FENCE_RE = re.compile(r"```(?:json)?\s*|\s*```", re.IGNORECASE)
 _JSON_OBJECT_RE = re.compile(r"\{.*\}", re.DOTALL)
 _JSON_ARRAY_RE = re.compile(r"\[.*\]", re.DOTALL)
+
+
+def _is_rate_limited_error(exc):
+    status_code = getattr(getattr(exc, "response", None), "status_code", None)
+    if status_code == 429:
+        return True
+    return "429" in str(exc)
+
+
+def _chat_with_retry(client, messages, max_attempts=3):
+    """Call client.chat with lightweight backoff for transient rate limits."""
+    last_error = None
+
+    for attempt in range(1, max_attempts + 1):
+        try:
+            return client.chat(messages)
+        except Exception as exc:
+            last_error = exc
+            if not _is_rate_limited_error(exc) or attempt == max_attempts:
+                raise
+            time.sleep(attempt)
+
+    raise last_error
 
 
 def _build_ticker_docs(
@@ -244,7 +268,8 @@ def get_ai_overview(
         output_tickers, max_articles_per_ticker=20, max_summary_chars=150, max_headline_chars=100, summary_key="text"
     )
 
-    response = client.chat(
+    response = _chat_with_retry(
+        client,
         [
             {"role": "system", "content": _AI_OVERVIEW_PROMPT},
             {
@@ -255,7 +280,7 @@ def get_ai_overview(
                     f"Expanded free text query:\n{expand_stock_query(free_text_query, client)}\n\n"
                 ),
             },
-        ]
+        ],
     )
     parsed = re.sub(r"\s+", " ", (response.get("content") or "").strip())
 
@@ -270,11 +295,12 @@ def expand_stock_query(user_query, client):
     if key in _EXPAND_CACHE:
         return _EXPAND_CACHE[key]
 
-    response = client.chat(
+    response = _chat_with_retry(
+        client,
         [
             {"role": "system", "content": _EXPAND_STOCK_QUERY_PROMPT},
             {"role": "user", "content": f"User stock preference query: {user_query}"},
-        ]
+        ],
     )
     parsed = re.sub(r"\s+", " ", (response.get("content") or "").strip())
 
@@ -290,7 +316,8 @@ def get_risk_signals_for_tickers(tickers, client):
         tickers, max_articles_per_ticker=30, max_summary_chars=200, max_headline_chars=150, summary_key="text"
     )
 
-    response = client.chat(
+    response = _chat_with_retry(
+        client,
         [
             {"role": "system", "content": _RISK_SIGNALS_TICKERS_PROMPT},
             {
@@ -299,7 +326,7 @@ def get_risk_signals_for_tickers(tickers, client):
                     f"Risk word bank:\n{RISK_WORD_DICT_JSON}\n\n" f"Ticker articles:\n{json.dumps(ticker_docs)}\n"
                 ),
             },
-        ]
+        ],
     )
     parsed = _parse_json_response((response.get("content") or "").strip(), expected="object")
 
@@ -314,14 +341,15 @@ def get_ticker_summary(tickers, client, positive_bias=False):
         tickers, max_articles_per_ticker=30, max_summary_chars=180, max_headline_chars=120, summary_key="text"
     )
 
-    response = client.chat(
+    response = _chat_with_retry(
+        client,
         [
             {"role": "system", "content": _TICKERS_SUMMARY_PROMPT},
             {
                 "role": "user",
                 "content": (f"Ticker articles:\n{json.dumps(ticker_docs)}\n" f"Positive bias: {positive_bias}\n"),
             },
-        ]
+        ],
     )
     parsed = _parse_json_response((response.get("content") or "").strip(), expected="object")
     return parsed if isinstance(parsed, dict) else {}
@@ -343,7 +371,8 @@ def get_ai_ticker_ranking(
         summary_key="summary",
     )
 
-    response = client.chat(
+    response = _chat_with_retry(
+        client,
         [
             {"role": "system", "content": _AI_TICKER_RANKING_PROMPT},
             {
@@ -354,7 +383,7 @@ def get_ai_ticker_ranking(
                     f"Ticker articles:\n{json.dumps(ticker_docs)}\n"
                 ),
             },
-        ]
+        ],
     )
     parsed = _parse_json_response(response.get("content"), expected="array")
     return parsed if isinstance(parsed, list) else []

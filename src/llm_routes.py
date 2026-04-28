@@ -42,8 +42,15 @@ def ai_overview_decision():
     
     if not portfolio_tickers or not output_tickers:
         return jsonify({"error": "Both portfolio_tickers and output_tickers are required"}), 400
-    
-    overview = get_ai_overview(portfolio_tickers, output_tickers, _get_client(), free_text_query)
+
+    try:
+        overview = get_ai_overview(portfolio_tickers, output_tickers, _get_client(), free_text_query)
+    except Exception as exc:
+        if "429" in str(exc):
+            overview = "AI overview temporarily unavailable due to rate limiting. Please retry in a moment."
+        else:
+            overview = "AI overview temporarily unavailable."
+
     return jsonify({"overview": overview})
 
 

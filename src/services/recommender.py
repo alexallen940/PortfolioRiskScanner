@@ -13,6 +13,7 @@ from services.llm_services import (
     expand_stock_query,
     get_ai_ticker_ranking,
     get_risk_signals_for_tickers,
+    get_ticker_summary,
 )
 from utils.load_from_db import RISK_KEYWORDS
 from utils.recommendation_index import RecommendationIndex
@@ -516,6 +517,35 @@ def get_stock_recommendations(
 
     if use_llm:
         top_results = _llm_rerank(top_results, query_for_retrieval)
+
+        # Generate one ticker summary per recommendation and attach it to
+        # both ranking views so the frontend can render AI summaries inline.
+        tickers_for_summary = [item["ticker"] for item in top_results]
+        try:
+            client = LLMClient(api_key=os.getenv("SPARK_API_KEY"))
+            summary_by_ticker = get_ticker_summary(
+                tickers_for_summary,
+                client,
+                positive_bias=False,
+            )
+        except Exception as exc:
+            traceback.print_exc()
+            error_text = str(exc)
+            if "429" in error_text:
+                fallback = "AI summary temporarily unavailable due to rate limiting. Please retry in a moment."
+            else:
+                fallback = "AI summary temporarily unavailable."
+            summary_by_ticker = {ticker: fallback for ticker in tickers_for_summary}
+
+        for item in top_results:
+            summary = summary_by_ticker.get(item["ticker"])
+            if isinstance(summary, str) and summary.strip():
+                item["llm_summary"] = summary.strip()
+
+        for item in ir_results:
+            summary = summary_by_ticker.get(item["ticker"])
+            if isinstance(summary, str) and summary.strip():
+                item["llm_summary"] = summary.strip()
 
     return {
         "recommendations": top_results,
