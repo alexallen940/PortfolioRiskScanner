@@ -127,4 +127,5 @@ export interface ScanResponse {
   recommendations: Recommendation[]
   irRecommendations: Recommendation[]
   queryInterpretation?: QueryInterpretation
+  aiOverviewSummary?: string
 }

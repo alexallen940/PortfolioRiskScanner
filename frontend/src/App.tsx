@@ -159,27 +159,6 @@ async function fetchRecommendationDescriptions(
   return withDescriptions;
 }
 
-async function fetchRecommendationSummaries(
-  tickers: string[],
-): Promise<Record<string, string>> {
-  if (tickers.length === 0) {
-    return {};
-  }
-
-  try {
-    const data = await postJson<Record<string, string>>(
-      "/api/portfolio/recommendations-summary",
-      {
-        tickers,
-        positive_bias: false,
-      },
-    );
-    return data;
-  } catch {
-    return {};
-  }
-}
-
 function formatNumber(value: number | undefined, digits = 4): string {
   if (value === undefined || Number.isNaN(value)) {
     return "N/A";
@@ -342,6 +321,7 @@ function App(): JSX.Element {
             risk_breakdown?: RiskScoreBreakdown;
             company_name?: string;
             logo_url?: string;
+            llm_summary?: string;
             sentiment?: {
               label: string;
               average_compound: number;
@@ -356,6 +336,7 @@ function App(): JSX.Element {
             risk_breakdown?: RiskScoreBreakdown;
             company_name?: string;
             logo_url?: string;
+            llm_summary?: string;
             sentiment?: {
               label: string;
               average_compound: number;
@@ -384,6 +365,7 @@ function App(): JSX.Element {
         riskBreakdown: rec.risk_breakdown,
         companyName: rec.company_name,
         logoUrl: rec.logo_url,
+        llmSummary: rec.llm_summary,
         sentiment: rec.sentiment,
       });
 
@@ -396,31 +378,37 @@ function App(): JSX.Element {
         .slice(0, 4)
         .map(mapRec);
 
-      const summaryByTicker = await fetchRecommendationSummaries(
-        baseIrRecommendations.map((rec) => rec.ticker),
-      );
-
-      const withSummary = (recommendation: Recommendation): Recommendation => ({
-        ...recommendation,
-        llmSummary: summaryByTicker[recommendation.ticker],
-      });
-
       const [recommendations, irRecommendations] = await Promise.all([
         fetchRecommendationDescriptions(baseRecommendations, true),
         fetchRecommendationDescriptions(baseIrRecommendations, false),
       ]);
 
-      const recommendationsWithSummary = recommendations.map(withSummary);
-      const irRecommendationsWithSummary = irRecommendations.map(withSummary);
+      // Fetch AI overview summary comparing portfolio to recommendations
+      let aiOverviewSummary: string | undefined;
+      try {
+        const overviewData = await postJson<{ overview: string }>(
+          "/api/portfolio/ai-overview",
+          {
+            portfolio_tickers: parsedPortfolio,
+            output_tickers: recommendations.map((r) => r.ticker),
+            free_text_query: queryInput.trim(),
+          },
+        );
+        aiOverviewSummary = overviewData.overview;
+      } catch {
+        // If overview fails, just continue without it
+        aiOverviewSummary = undefined;
+      }
 
       const response: ScanResponse = {
         baseRiskScore: riskScoreData.risk_score,
         portfolioRiskBreakdown: riskScoreData.risk_breakdown,
         riskTypes: Array.from(new Set(riskTypesData.risk_types)).slice(0, 5),
-        summary: `Generated ${recommendationsWithSummary.length} recommendations for ${parsedPortfolio.length} holdings. Query context: ${queryInput.trim()}`,
-        recommendations: recommendationsWithSummary,
-        irRecommendations: irRecommendationsWithSummary,
+        summary: `Generated ${recommendations.length} recommendations for ${parsedPortfolio.length} holdings. Query context: ${queryInput.trim()}`,
+        recommendations: recommendations,
+        irRecommendations: irRecommendations,
         queryInterpretation: recsData.query_interpretation,
+        aiOverviewSummary: aiOverviewSummary,
       };
 
       setResults(response);
@@ -777,6 +765,11 @@ function App(): JSX.Element {
                     ? "Ranked by cosine similarity between your query and each stock's article profile."
                     : "Re-rankings, risk signal refinement, and ticker summary by AI using the expanded query and article evidence."}
                 </p>
+                {suggestionsTab === "llm" && results.aiOverviewSummary && (
+                  <div className="ai-overview-summary">
+                    <p>{results.aiOverviewSummary}</p>
+                  </div>
+                )}
                 <div className="recommendation-list">
                   {(suggestionsTab === "llm"
                     ? results.recommendations
@@ -920,55 +913,55 @@ function App(): JSX.Element {
                                 <ul className="signal-bullets detail-bullets">
                                   {stock.descriptionDetails?.length
                                     ? stock.descriptionDetails.map(
-                                        (detail, bulletIndex) => (
-                                          <li
-                                            key={`${stock.ticker}-detail-${bulletIndex}`}
-                                          >
-                                            <span className="risk-bullet-text">
-                                              {detail.bullet}
-                                            </span>
-                                            {detail.headlines.length > 0 && (
-                                              <>
-                                                <div className="headlines-label">
-                                                  Relevant headlines:
-                                                </div>
-                                                <ul className="headline-samples">
-                                                  {detail.headlines.map(
-                                                    (hl, hlIndex) => (
-                                                      <li
-                                                        key={`${stock.ticker}-hl-${bulletIndex}-${hlIndex}`}
-                                                      >
-                                                        {hl.url ? (
-                                                          <a
-                                                            href={hl.url}
-                                                            target="_blank"
-                                                            rel="noopener noreferrer"
-                                                          >
-                                                            {hl.title}
-                                                          </a>
-                                                        ) : (
-                                                          hl.title
-                                                        )}
-                                                      </li>
-                                                    ),
-                                                  )}
-                                                </ul>
-                                              </>
-                                            )}
-                                          </li>
-                                        ),
-                                      )
-                                    : (
-                                        stock.description ?? [
-                                          "No risk summary available yet.",
-                                        ]
-                                      ).map((bullet, bulletIndex) => (
+                                      (detail, bulletIndex) => (
                                         <li
-                                          key={`${stock.ticker}-${bulletIndex}`}
+                                          key={`${stock.ticker}-detail-${bulletIndex}`}
                                         >
-                                          {bullet}
+                                          <span className="risk-bullet-text">
+                                            {detail.bullet}
+                                          </span>
+                                          {detail.headlines.length > 0 && (
+                                            <>
+                                              <div className="headlines-label">
+                                                Relevant headlines:
+                                              </div>
+                                              <ul className="headline-samples">
+                                                {detail.headlines.map(
+                                                  (hl, hlIndex) => (
+                                                    <li
+                                                      key={`${stock.ticker}-hl-${bulletIndex}-${hlIndex}`}
+                                                    >
+                                                      {hl.url ? (
+                                                        <a
+                                                          href={hl.url}
+                                                          target="_blank"
+                                                          rel="noopener noreferrer"
+                                                        >
+                                                          {hl.title}
+                                                        </a>
+                                                      ) : (
+                                                        hl.title
+                                                      )}
+                                                    </li>
+                                                  ),
+                                                )}
+                                              </ul>
+                                            </>
+                                          )}
                                         </li>
-                                      ))}
+                                      ),
+                                    )
+                                    : (
+                                      stock.description ?? [
+                                        "No risk summary available yet.",
+                                      ]
+                                    ).map((bullet, bulletIndex) => (
+                                      <li
+                                        key={`${stock.ticker}-${bulletIndex}`}
+                                      >
+                                        {bullet}
+                                      </li>
+                                    ))}
                                 </ul>
                               </div>
 
