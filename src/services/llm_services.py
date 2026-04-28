@@ -182,6 +182,85 @@ _AI_TICKER_RANKING_PROMPT = (
     "]\n"
 )
 
+_AI_OVERVIEW_PROMPT = (
+    "You will receive:\n"
+    "1) Portfolio ticker articles, a dictionary mapping portfolio stock tickers to a list of article objects.\n"
+    "Each article object has:\n"
+    "- headline\n"
+    "- text\n\n"
+    "2) Output ticker articles, a dictionary mapping output stock tickers to a list of article objects.\n"
+    "Each article object has:\n"
+    "- headline\n"
+    "- text\n\n"
+    "3) An expanded free text query string describing the user's desired characteristics.\n\n"
+    "Your task:\n"
+    "Use the article objects as the primary evidence to produce a concise AI overview summary that does TWO things:\n"
+    "(A) Assesses the health of the user's current portfolio based on the portfolio ticker articles, "
+    "noting overall stability and flagging any specific holdings that appear to need attention "
+    "(e.g., negative news, deteriorating fundamentals, regulatory or competitive risks, elevated volatility signals).\n"
+    "(B) Explains WHY each output ticker is a good match for the portfolio tickers and/or the expanded free text query string.\n\n"
+    "Summary rules:\n"
+    "- Use SEMANTIC reasoning, not exact keyword overlap only.\n"
+    "- Reference the themes, risks, business characteristics, and signals present in each ticker's articles.\n"
+    "- For the portfolio assessment: give an overall stability read (e.g., stable, mixed, fragile) and call out by ticker any holdings that warrant attention, with a brief evidence-based reason. If no holdings warrant attention, say so explicitly.\n"
+    "- For the output tickers: explicitly connect each output ticker to the relevant portfolio ticker(s) and/or to the free text query.\n"
+    "- Be conservative, factual, and grounded in the article evidence. Do not invent facts or give buy/sell recommendations.\n"
+    "- Keep the tone neutral and analytical.\n"
+    "- Cover every output ticker at least once.\n"
+    "- Do NOT add any new tickers.\n"
+    "- Do NOT omit any output tickers.\n"
+    "- Do NOT return scores, rankings, bullet lists, JSON, or markdown formatting.\n"
+    "- Do NOT include disclaimers, preambles, or closing remarks (e.g., 'Here is a summary...').\n"
+    "- Return ONLY the summary as a single plain text string.\n\n"
+    "Structure and length:\n"
+    "- Write as flowing prose in 2 short paragraphs separated by a single blank line.\n"
+    "- Paragraph 1 (2-4 sentences): portfolio health assessment and any tickers needing attention.\n"
+    "- Paragraph 2 (3-5 sentences): alignment rationale for the output tickers.\n\n"
+    "Respond ONLY with the plain text summary string. Example shape (illustrative only):\n"
+    '"The portfolio reads as broadly stable, with consistent coverage of durable enterprise software and '
+    "semiconductor names and no widespread negative signals. That said, NVDA warrants attention given "
+    "recurring articles on export-control exposure and customer concentration, and TSLA shows mixed signals "
+    "tied to margin pressure and demand softness in recent coverage.\\n\\n"
+    "PANW aligns with the portfolio's cybersecurity exposure given recurring articles on enterprise threat "
+    "detection and platform consolidation, themes that also appear in the query's emphasis on defensive "
+    "software. QCOM matches the portfolio's semiconductor and mobile connectivity tilt, with article coverage "
+    "highlighting handset recovery and edge-AI design wins. ACN reinforces the query's focus on enterprise "
+    "digital transformation, echoing consulting-led AI deployment themes seen across portfolio holdings. "
+    'CSCO complements the networking and infrastructure signals present in both the portfolio articles and the query."\n'
+)
+
+
+def get_ai_overview(
+    portfolio_tickers=[],
+    output_tickers=[],
+    client=None,
+    free_text_query="",
+):
+    portfolio_ticker_docs = _build_ticker_docs(
+        portfolio_tickers, max_articles_per_ticker=20, max_summary_chars=150, max_headline_chars=100, summary_key="text"
+    )
+
+    output_ticker_docs = _build_ticker_docs(
+        output_tickers, max_articles_per_ticker=20, max_summary_chars=150, max_headline_chars=100, summary_key="text"
+    )
+
+    response = client.chat(
+        [
+            {"role": "system", "content": _AI_OVERVIEW_PROMPT},
+            {
+                "role": "user",
+                "content": (
+                    f"Portfolio ticker articles:\n{json.dumps(portfolio_ticker_docs)}\n\n"
+                    f"Output ticker articles:\n{json.dumps(output_ticker_docs)}\n"
+                    f"Expanded free text query:\n{expand_stock_query(free_text_query, client)}\n\n"
+                ),
+            },
+        ]
+    )
+    parsed = re.sub(r"\s+", " ", (response.get("content") or "").strip())
+
+    return parsed
+
 
 def expand_stock_query(user_query, client):
     key = (user_query or "").strip().lower()
@@ -208,7 +287,7 @@ def expand_stock_query(user_query, client):
 
 def get_risk_signals_for_tickers(tickers, client):
     ticker_docs = _build_ticker_docs(
-        tickers, max_articles_per_ticker=40, max_summary_chars=200, max_headline_chars=150, summary_key="text"
+        tickers, max_articles_per_ticker=30, max_summary_chars=200, max_headline_chars=150, summary_key="text"
     )
 
     response = client.chat(
@@ -232,7 +311,7 @@ def get_risk_signals_for_tickers(tickers, client):
 
 def get_ticker_summary(tickers, client, positive_bias=False):
     ticker_docs = _build_ticker_docs(
-        tickers, max_articles_per_ticker=40, max_summary_chars=180, max_headline_chars=120, summary_key="text"
+        tickers, max_articles_per_ticker=30, max_summary_chars=180, max_headline_chars=120, summary_key="text"
     )
 
     response = client.chat(
