@@ -1,16 +1,17 @@
-from collections import defaultdict
 import traceback
-
+from collections import defaultdict
+from sklearn.feature_extraction.text import TfidfVectorizer
 from models import Article, RiskData
 from services.svd import get_fitted_svd
-from sklearn.feature_extraction.text import TfidfVectorizer
+from utils.load_from_db import _load_article_link_lookup, _load_company_metadata
+import json
+import os
 
-from utils.load_from_db import (
-    _load_article_link_lookup,
-    _load_company_metadata,
-    _load_company_metadata_from_articles,
-    _load_company_metadata_from_dataset,
-)
+BASE_DIR = os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
+stop_words_path = os.path.join(BASE_DIR, "data", "stop_words.json")
+
+with open(stop_words_path, "r") as f:
+    STOP_WORDS = json.load(f)
 
 
 class RecommendationIndex:
@@ -35,20 +36,15 @@ class RecommendationIndex:
         self.article_link_lookup = {}
         self._built = False
 
-    def build(
-        self,
-        max_features=5000,
-        ngram_range=(1, 3),
-        min_df=10,
-        n_components=20,
-    ):
+    def build(self, max_features=5000, ngram_range=(1, 3), min_df=10, n_components=20, max_df=0.95):
         try:
             ticker_docs = defaultdict(list)
             ticker_article_rows = defaultdict(list)
 
             for article in Article.query.all():
-                ticker_docs[article.ticker.upper().strip()].append(f"{article.headline} {article.summary}")
-                ticker_article_rows[article.ticker.upper().strip()].append(article)
+                key = article.ticker.upper().strip()
+                ticker_docs[key].append(f"{article.headline} {article.summary}")
+                ticker_article_rows[key].append(article)
 
             ticker_docs = {
                 ticker: " ".join(texts).replace('"', "").replace("-", " ").lower().strip()
@@ -58,13 +54,26 @@ class RecommendationIndex:
             tickers = list(ticker_docs.keys())
             documents = [ticker_docs[t] for t in tickers]
 
-            # tfidf
+            # Vectorizer
             vectorizer = TfidfVectorizer(
-                stop_words="english",
+                stop_words="english", max_features=max_features, ngram_range=ngram_range, min_df=min_df, max_df=max_df
+            )
+
+            custom_stops = (
+                list(vectorizer.get_stop_words())
+                + [w.lower().strip() for w in STOP_WORDS["company_names"]]
+                + [w.lower().strip() for w in STOP_WORDS["extra_words"]]
+                + [w.lower().strip() for w in STOP_WORDS["people_names"]]
+            )
+
+            vectorizer = TfidfVectorizer(
+                stop_words=custom_stops,
                 max_features=max_features,
                 ngram_range=ngram_range,
                 min_df=min_df,
+                max_df=max_df,
             )
+
             tfidf_matrix = vectorizer.fit_transform(documents)
             feature_names = vectorizer.get_feature_names_out()
             unigram_features = [f for f in feature_names if "_" not in f and " " not in f]
@@ -75,15 +84,7 @@ class RecommendationIndex:
 
             # ticker risk data
             risk_rows = RiskData.query.all()
-            risk_by_ticker = {row.ticker: row for row in risk_rows}
-            risk_scores = {row.ticker: row.risk_score_1_10 for row in risk_rows}
             raw_risk_scores = [float(row.raw_risk_score) for row in risk_rows]
-            min_raw = min(raw_risk_scores, default=0)
-            max_raw = max(raw_risk_scores, default=0)
-
-            # loads from db
-            article_links = _load_article_link_lookup()
-            company_md = _load_company_metadata()
 
             self.tickers = tickers
             self.ticker_docs = ticker_docs
@@ -93,13 +94,13 @@ class RecommendationIndex:
             self.doc_repr = doc_repr_svd
             self.unigram_features = unigram_features
             self.feature_names = feature_names
-            self.risk_by_ticker = risk_by_ticker
-            self.risk_scores = risk_scores
-            self.min_raw_score = min_raw
-            self.max_raw_score = max_raw
-            self.company_metadata = company_md
-            self.article_link_lookup = article_links
             self.ticker_article_rows = ticker_article_rows
+            self.risk_by_ticker = {row.ticker: row for row in risk_rows}
+            self.risk_scores = {row.ticker: row.risk_score_1_10 for row in risk_rows}
+            self.min_raw_score = min(raw_risk_scores, default=0.0)
+            self.max_raw_score = max(raw_risk_scores, default=0.0)
+            self.company_metadata = _load_company_metadata()
+            self.article_link_lookup = _load_article_link_lookup()
             self._built = True
 
         except Exception:
@@ -108,5 +109,3 @@ class RecommendationIndex:
     def ensure_built(self):
         if not self._built:
             self.build()
-
-

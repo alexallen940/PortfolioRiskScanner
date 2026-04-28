@@ -30,16 +30,8 @@ GENERIC_NAME_PREFIXES = (
 
 def _clean_company_name(name):
     cleaned = re.sub(r"\s+", " ", name).strip(" ,.-:")
-
-    if not cleaned:
+    if not cleaned or cleaned.startswith(GENERIC_NAME_PREFIXES) or len(cleaned) > 70:
         return None
-
-    if cleaned.startswith(GENERIC_NAME_PREFIXES):
-        return None
-
-    if len(cleaned) > 70:
-        return None
-
     return cleaned
 
 
@@ -63,32 +55,32 @@ def _extract_company_name(text, ticker):
     return None
 
 
+def _first_present_key_value(row, *keys):
+    for key in keys:
+        value = (row.get(key) or "").strip()
+        if value:
+            return value
+    return ""
+
+
 def _load_company_metadata_from_dataset():
     metadata = {}
 
-    dataset_path = None
-    if os.path.exists(constituents_csv_path):
-        dataset_path = constituents_csv_path
-
-    if not dataset_path:
+    if not os.path.exists(constituents_csv_path):
         return metadata
 
-    with open(dataset_path, "r") as file:
-        reader = csv.DictReader(file)
-        for row in reader:
-            ticker = (row.get("ticker") or row.get("Symbol") or row.get("symbol") or "").strip().upper()
+    with open(constituents_csv_path, "r") as file:
+        for row in csv.DictReader(file):
+            ticker = _first_present_key_value(row, "ticker", "Symbol", "symbol").upper()
             if not ticker:
                 continue
 
-            company_name = (
-                row.get("company_name") or row.get("Security") or row.get("security") or ""
-            ).strip() or ticker
+            company_name = _first_present_key_value(row, "company_name", "Security", "security") or ticker
             logo_url = (row.get("logo_url") or "").strip() or None
 
             logo_domain = (row.get("logo_domain") or "").strip().lower()
             if logo_domain:
-                logo_domain = re.sub(r"^https?://", "", logo_domain)
-                logo_domain = logo_domain.split("/")[0]
+                logo_domain = re.sub(r"^https?://", "", logo_domain).split("/", 1)[0]
 
             if not logo_url and logo_domain:
                 logo_url = f"https://logos-api.apistemic.com/domain:{logo_domain}"
@@ -102,16 +94,12 @@ def _load_company_metadata_from_articles():
     metadata = {}
 
     with open(articles_csv_path, "r") as file:
-        reader = csv.DictReader(file)
-        for row in reader:
-            ticker = row.get("ticker", "").strip().upper()
+        for row in csv.DictReader(file):
+            ticker = (row.get("ticker") or "").strip().upper()
             if not ticker:
                 continue
 
-            entry = metadata.setdefault(
-                ticker,
-                {"company_name": ticker, "logo_url": None},
-            )
+            entry = metadata.setdefault(ticker, {"company_name": ticker, "logo_url": None})
 
             if entry["company_name"] == ticker:
                 extracted_name = _extract_company_name(row.get("headline", ""), ticker) or _extract_company_name(
@@ -122,8 +110,6 @@ def _load_company_metadata_from_articles():
 
     return metadata
 
-def normalize_headline(h):
-    return h.strip().lower()
 
 def _load_article_link_lookup():
     article_links = {}
@@ -132,8 +118,7 @@ def _load_article_link_lookup():
         return article_links
 
     with open(articles_csv_path, "r", encoding="utf-8-sig", newline="") as file:
-        reader = csv.DictReader(file)
-        for row in reader:
+        for row in csv.DictReader(file):
             ticker = (row.get("ticker") or "").strip().upper()
             headline = (row.get("headline") or "").strip()
             url = (row.get("url") or "").strip() or None
@@ -145,12 +130,9 @@ def _load_article_link_lookup():
 
 
 def _load_company_metadata():
-    dataset_metadata = _load_company_metadata_from_dataset()
+    combined = {ticker: values.copy() for ticker, values in _load_company_metadata_from_dataset().items()}
 
-    article_metadata = _load_company_metadata_from_articles()
-    combined = {ticker: values.copy() for ticker, values in dataset_metadata.items()}
-
-    for ticker, article_values in article_metadata.items():
+    for ticker, article_values in _load_company_metadata_from_articles().items():
         entry = combined.setdefault(ticker, {"company_name": ticker, "logo_url": None})
         if entry.get("company_name", ticker) == ticker and article_values.get("company_name"):
             entry["company_name"] = article_values["company_name"]

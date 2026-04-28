@@ -1,8 +1,8 @@
-from collections import defaultdict
 import json
 import os
 import re
 from infosci_spark_client import LLMClient
+
 
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
 RISK_WORD_BANK_PATH = os.path.join(BASE_DIR, "data", "risk_word_bank.json")
@@ -15,37 +15,46 @@ RISK_WORD_DICT_JSON = json.dumps(RISK_WORD_DICT)
 _EXPAND_CACHE = {}
 _EXPAND_CACHE_MAX = 100
 
-_JSON_WORD_RE = re.compile(r"```(?:json)?\s*|\s*```", re.IGNORECASE)
+_JSON_FENCE_RE = re.compile(r"```(?:json)?\s*|\s*```", re.IGNORECASE)
 _JSON_OBJECT_RE = re.compile(r"\{.*\}", re.DOTALL)
 _JSON_ARRAY_RE = re.compile(r"\[.*\]", re.DOTALL)
 
 
-def _ticker_docs_from_index(tickers, max_articles_per_ticker=30, max_summary_chars=200, max_headline_chars=150):
-    """Build the {ticker: [{headline, text}, ...]} dict from cached INDEX data."""
+def _build_ticker_docs(
+    tickers,
+    max_articles_per_ticker=30,
+    max_summary_chars=200,
+    max_headline_chars=150,
+    summary_key="text",
+):
+    """Build the {ticker: [{headline, <summary_key>}, ...]} dict from cached INDEX data."""
     from services.recommender import INDEX
 
     INDEX.ensure_built()
-    res = defaultdict(list)
+    out = {}
     for ticker in tickers:
         normalized = ticker.upper().strip()
-        docs = INDEX.ticker_article_rows.get(normalized, [])[:max_articles_per_ticker]
-        for article in docs:
-            res[normalized].append(
-                {
-                    "headline": (article.headline or "")[:max_headline_chars].strip().lower(),
-                    "text": (article.summary or "")[:max_summary_chars].strip().lower(),
-                }
-            )
-    return res
+        articles = INDEX.ticker_article_rows.get(normalized, [])[:max_articles_per_ticker]
+        out[normalized] = [
+            {
+                "headline": (article.headline or "")[:max_headline_chars].strip().lower(),
+                summary_key: (article.summary or "")[:max_summary_chars].strip().lower(),
+            }
+            for article in articles
+        ]
+    return out
 
 
 def _parse_json_response(content, expected="object"):
-    """Returns parsed value or None"""
+    """Return parsed JSON value or None if content can't be parsed.
 
+    Tries direct parse first, then strips ``` fences, then falls back to
+    extracting the first {...} or [...] match.
+    """
     if not content:
         return None
 
-    stripped = _JSON_WORD_RE.sub("", content).strip()
+    stripped = _JSON_FENCE_RE.sub("", content).strip()
 
     try:
         return json.loads(stripped)
@@ -54,7 +63,6 @@ def _parse_json_response(content, expected="object"):
 
     pattern = _JSON_OBJECT_RE if expected == "object" else _JSON_ARRAY_RE
     match = pattern.search(stripped)
-
     if not match:
         return None
 
@@ -177,54 +185,44 @@ _AI_TICKER_RANKING_PROMPT = (
 
 def expand_stock_query(user_query, client):
     key = (user_query or "").strip().lower()
-
     if not key:
         return ""
 
     if key in _EXPAND_CACHE:
         return _EXPAND_CACHE[key]
 
-    messages = [
-        {
-            "role": "system",
-            "content": _EXPAND_STOCK_QUERY_PROMPT,
-        },
-        {
-            "role": "user",
-            "content": f"User stock preference query: {user_query}",
-        },
-    ]
-
-    response = client.chat(messages)
-    content = (response.get("content") or "").strip()
-    parsed = re.sub(r"\s+", " ", content)
+    response = client.chat(
+        [
+            {"role": "system", "content": _EXPAND_STOCK_QUERY_PROMPT},
+            {"role": "user", "content": f"User stock preference query: {user_query}"},
+        ]
+    )
+    parsed = re.sub(r"\s+", " ", (response.get("content") or "").strip())
 
     if len(_EXPAND_CACHE) >= _EXPAND_CACHE_MAX:
         _EXPAND_CACHE.pop(next(iter(_EXPAND_CACHE)), None)
-
     _EXPAND_CACHE[key] = parsed
 
     return parsed
 
 
 def get_risk_signals_for_tickers(tickers, client):
-
-    ticker_docs = _ticker_docs_from_index(
-        tickers, max_articles_per_ticker=40, max_summary_chars=200, max_headline_chars=150
+    ticker_docs = _build_ticker_docs(
+        tickers, max_articles_per_ticker=40, max_summary_chars=200, max_headline_chars=150, summary_key="text"
     )
 
-    messages = [
-        {"role": "system", "content": _RISK_SIGNALS_TICKERS_PROMPT},
-        {
-            "role": "user",
-            "content": (f"Risk word bank:\n{RISK_WORD_DICT_JSON}\n\n" f"Ticker articles:\n{json.dumps(ticker_docs)}\n"),
-        },
-    ]
-
-    response = client.chat(messages)
-    content = (response.get("content") or "").strip()
-
-    parsed = _parse_json_response(content, expected="object")
+    response = client.chat(
+        [
+            {"role": "system", "content": _RISK_SIGNALS_TICKERS_PROMPT},
+            {
+                "role": "user",
+                "content": (
+                    f"Risk word bank:\n{RISK_WORD_DICT_JSON}\n\n" f"Ticker articles:\n{json.dumps(ticker_docs)}\n"
+                ),
+            },
+        ]
+    )
+    parsed = _parse_json_response((response.get("content") or "").strip(), expected="object")
 
     return {
         "signals": parsed if isinstance(parsed, dict) else {},
@@ -233,62 +231,53 @@ def get_risk_signals_for_tickers(tickers, client):
 
 
 def get_ticker_summary(tickers, client, positive_bias=False):
-
-    ticker_docs = _ticker_docs_from_index(
-        tickers, max_articles_per_ticker=40, max_summary_chars=180, max_headline_chars=120
+    ticker_docs = _build_ticker_docs(
+        tickers, max_articles_per_ticker=40, max_summary_chars=180, max_headline_chars=120, summary_key="text"
     )
 
-    messages = [
-        {"role": "system", "content": _TICKERS_SUMMARY_PROMPT},
-        {
-            "role": "user",
-            "content": (f"Ticker articles:\n{json.dumps(ticker_docs)}\n" f"Positive bias: {positive_bias}\n"),
-        },
-    ]
-
-    response = client.chat(messages)
-    content = (response.get("content") or "").strip()
-    parsed = _parse_json_response(content, expected="object")
+    response = client.chat(
+        [
+            {"role": "system", "content": _TICKERS_SUMMARY_PROMPT},
+            {
+                "role": "user",
+                "content": (f"Ticker articles:\n{json.dumps(ticker_docs)}\n" f"Positive bias: {positive_bias}\n"),
+            },
+        ]
+    )
+    parsed = _parse_json_response((response.get("content") or "").strip(), expected="object")
     return parsed if isinstance(parsed, dict) else {}
 
 
 def get_ai_ticker_ranking(
-    tickers, client, free_text_query="", max_articles_per_ticker=5, max_summary_chars=200, max_headline_chars=150
+    tickers,
+    client,
+    free_text_query="",
+    max_articles_per_ticker=5,
+    max_summary_chars=200,
+    max_headline_chars=150,
 ):
+    ticker_docs = _build_ticker_docs(
+        tickers,
+        max_articles_per_ticker=max_articles_per_ticker,
+        max_summary_chars=max_summary_chars,
+        max_headline_chars=max_headline_chars,
+        summary_key="summary",
+    )
 
-    from services.recommender import INDEX
-
-    INDEX.ensure_built()
-
-    ticker_docs = defaultdict(list)
-
-    for ticker in tickers:
-        normalized = ticker.upper().strip()
-        docs = INDEX.ticker_article_rows.get(normalized)
-        ticker_docs[ticker] = [
+    response = client.chat(
+        [
+            {"role": "system", "content": _AI_TICKER_RANKING_PROMPT},
             {
-                "headline": (article.headline or "")[:max_headline_chars].strip().lower(),
-                "summary": (article.summary or "")[:max_summary_chars].strip().lower(),
-            }
-            for article in docs[:max_articles_per_ticker]
+                "role": "user",
+                "content": (
+                    f"Expanded free text query:\n{expand_stock_query(free_text_query, client)}\n\n"
+                    f"Tickers:\n{json.dumps(tickers)}\n\n"
+                    f"Ticker articles:\n{json.dumps(ticker_docs)}\n"
+                ),
+            },
         ]
-
-    messages = [
-        {"role": "system", "content": _AI_TICKER_RANKING_PROMPT},
-        {
-            "role": "user",
-            "content": (
-                f"Expanded free text query:\n{expand_stock_query(free_text_query, client)}\n\n"
-                f"Tickers:\n{json.dumps(tickers)}\n\n"
-                f"Ticker articles:\n{json.dumps(ticker_docs)}\n"
-            ),
-        },
-    ]
-
-    response = client.chat(messages)
-    content = response.get("content")
-
-    parsed = _parse_json_response(content, expected="array")
+    )
+    parsed = _parse_json_response(response.get("content"), expected="array")
     return parsed if isinstance(parsed, list) else []
 
 

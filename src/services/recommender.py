@@ -1,52 +1,43 @@
-import csv
-import re
 import difflib
+import os
+import re
+import traceback
+from collections import Counter, defaultdict
 from urllib.parse import urlparse
-from collections import Counter
-from infosci_spark_client import LLMClient
 import numpy as np
-from sklearn.feature_extraction.text import TfidfVectorizer
+from infosci_spark_client import LLMClient
+from nltk.sentiment.vader import SentimentIntensityAnalyzer
 from sklearn.metrics.pairwise import cosine_similarity
+from models import Article
 from services.llm_services import (
+    expand_stock_query,
     get_ai_ticker_ranking,
     get_risk_signals_for_tickers,
-    get_ticker_summary,
-    expand_stock_query,
 )
-from services.svd import get_fitted_svd
-from models import Article, RiskData
-from nltk.sentiment.vader import SentimentIntensityAnalyzer
-import json
-import os
-import traceback
-
 from utils.load_from_db import RISK_KEYWORDS
 from utils.recommendation_index import RecommendationIndex
-from collections import defaultdict
+
 
 try:
     import yfinance as yfin
 except ImportError:
     yfin = None
 
-# BASE_DIR = os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
-# risk_word_bank_json_path = os.path.join(BASE_DIR, "data", "risk_word_bank.json")
-# articles_csv_path = os.path.join(BASE_DIR, "data", "articles.csv")
-# constituents_csv_path = os.path.join(BASE_DIR, "data", "constituents.csv")
-
-# with open(risk_word_bank_json_path, "r") as f:
-#     RISK_KEYWORDS = json.load(f)
-
 
 INDEX = RecommendationIndex()
-COMPANY_METADATA = INDEX.company_metadata
 YFINANCE_METADATA_CACHE = {}
-ARTICLE_LINK_LOOKUP = INDEX.article_link_lookup
+
+SENTIMENT_ANALYZER = SentimentIntensityAnalyzer()
+
+TICKER_WORD_RE = re.compile(r"\b[A-Za-z][A-Za-z']+\b")
 
 
-def _fuzzy_correct_query_text(query_text, unigram_features=INDEX.unigram_features, min_length=4, cutoff=0.84):
+def _fuzzy_correct_query_text(query_text, unigram_features=None, min_length=4, cutoff=0.84):
     if not query_text:
         return "", {}
+
+    if unigram_features is None:
+        unigram_features = INDEX.unigram_features
 
     feature_set = set(unigram_features)
     corrections = {}
@@ -58,18 +49,14 @@ def _fuzzy_correct_query_text(query_text, unigram_features=INDEX.unigram_feature
         if len(lower) < min_length or lower in feature_set:
             return token
 
-        close_match = difflib.get_close_matches(lower, unigram_features, n=1, cutoff=cutoff)
-        if not close_match:
+        close = difflib.get_close_matches(lower, unigram_features, n=1, cutoff=cutoff)
+        if not close or close[0] == lower:
             return token
 
-        corrected = close_match[0]
-        if corrected == lower:
-            return token
+        corrections[token] = close[0]
+        return close[0]
 
-        corrections[token] = corrected
-        return corrected
-
-    corrected_query = re.sub(r"\b[A-Za-z][A-Za-z']+\b", _replace, query_text)
+    corrected_query = TICKER_WORD_RE.sub(_replace, query_text)
     return corrected_query, corrections
 
 
@@ -85,15 +72,13 @@ def _website_to_domain(website):
         candidate = f"https://{candidate}"
 
     try:
-        parsed = urlparse(candidate)
-        domain = (parsed.netloc or "").lower()
+        domain = (urlparse(candidate).netloc or "").lower()
     except Exception:
         return None
 
     if domain.startswith("www."):
         domain = domain[4:]
 
-    # Strip non-brand subdomains (e.g. corporate.lululemon.com → lululemon.com)
     # Keep only the registrable domain (last two labels: example.com)
     parts = domain.split(".")
     if len(parts) > 2:
@@ -103,12 +88,13 @@ def _website_to_domain(website):
 
 
 def get_article_url(ticker, headline):
-    exact_url = INDEX.article_link_lookup.get((ticker, headline))
+    article_link_lookup = INDEX.article_link_lookup
+    exact_url = article_link_lookup.get((ticker, headline))
     if exact_url:
         return exact_url
 
     normalized_headline = headline.strip().lower()
-    for (stored_ticker, stored_headline), url in INDEX.article_link_lookup.items():
+    for (stored_ticker, stored_headline), url in article_link_lookup.items():
         if stored_ticker == ticker and stored_headline.strip().lower() == normalized_headline:
             return url
 
@@ -176,9 +162,6 @@ def get_signal_count(signal):
     return 0
 
 
-SENTIMENT_ANALYZER = SentimentIntensityAnalyzer()
-
-
 def get_article_sentiment(text):
     scores = SENTIMENT_ANALYZER.polarity_scores(text or "")
     compound = scores["compound"]
@@ -199,8 +182,23 @@ def get_article_sentiment(text):
     }
 
 
-def get_ticker_sentiment_summary(ticker, max_articles=25):
+def _overall_sentiment_label(avg_compound):
+    if avg_compound >= 0.5:
+        return "very positive"
+    if avg_compound >= 0.15:
+        return "positive"
+    if avg_compound >= 0.05:
+        return "slightly positive"
+    if avg_compound <= -0.5:
+        return "very negative"
+    if avg_compound <= -0.15:
+        return "negative"
+    if avg_compound <= -0.05:
+        return "slightly negative"
+    return "neutral"
 
+
+def get_ticker_sentiment_summary(ticker, max_articles=25):
     normalized_ticker = ticker.upper().strip()
 
     articles = Article.query.filter_by(ticker=normalized_ticker).order_by(Article.id.desc()).limit(max_articles).all()
@@ -214,42 +212,32 @@ def get_ticker_sentiment_summary(ticker, max_articles=25):
             "articles": [],
         }
 
-    article_sentiments = []
-    for article in articles:
-        text = f"{article.headline}. {article.summary}"
-        sentiment = get_article_sentiment(text)
-
-        article_sentiments.append(
-            {
-                "headline": article.headline,
-                "sentiment": sentiment,
-            }
-        )
+    article_sentiments = [
+        {
+            "headline": article.headline,
+            "sentiment": get_article_sentiment(f"{article.headline}. {article.summary}"),
+        }
+        for article in articles
+    ]
 
     avg_compound = sum(item["sentiment"]["compound"] for item in article_sentiments) / len(article_sentiments)
-
-    if avg_compound >= 0.5:
-        overall_label = "very positive"
-    elif avg_compound >= 0.15:
-        overall_label = "positive"
-    elif avg_compound >= 0.05:
-        overall_label = "slightly positive"
-    elif avg_compound <= -0.5:
-        overall_label = "very negative"
-    elif avg_compound <= -0.15:
-        overall_label = "negative"
-    elif avg_compound <= -0.05:
-        overall_label = "slightly negative"
-    else:
-        overall_label = "neutral"
 
     return {
         "ticker": normalized_ticker,
         "article_count": len(article_sentiments),
         "average_compound": round(avg_compound, 4),
-        "label": overall_label,
+        "label": _overall_sentiment_label(avg_compound),
         "articles": article_sentiments,
     }
+
+
+_RISK_BREAKDOWN_WEIGHTS = {
+    "annualized_volatility": 0.30,
+    "max_drawdown": 0.25,
+    "var_95": 0.20,
+    "downside_volatility": 0.15,
+    "avg_daily_volume_inverse": 0.10,
+}
 
 
 def _build_risk_breakdown(risk_row, min_raw_score, max_raw_score):
@@ -261,16 +249,16 @@ def _build_risk_breakdown(risk_row, min_raw_score, max_raw_score):
     var_95_abs = abs(float(risk_row.var_95))
     downside_volatility = float(risk_row.downside_volatility)
     avg_daily_volume = float(risk_row.avg_daily_volume)
+    avg_daily_volume_inverse = 1 / (avg_daily_volume + 1)
 
-    weighted_volatility = 0.30 * annualized_volatility
-    weighted_drawdown = 0.25 * max_drawdown_abs
-    weighted_var_95 = 0.20 * var_95_abs
-    weighted_downside = 0.15 * downside_volatility
-    weighted_volume_inverse = 0.10 * (1 / (avg_daily_volume + 1))
-
-    raw_score_formula = (
-        weighted_volatility + weighted_drawdown + weighted_var_95 + weighted_downside + weighted_volume_inverse
-    )
+    weighted = {
+        "annualized_volatility": _RISK_BREAKDOWN_WEIGHTS["annualized_volatility"] * annualized_volatility,
+        "max_drawdown": _RISK_BREAKDOWN_WEIGHTS["max_drawdown"] * max_drawdown_abs,
+        "var_95": _RISK_BREAKDOWN_WEIGHTS["var_95"] * var_95_abs,
+        "downside_volatility": _RISK_BREAKDOWN_WEIGHTS["downside_volatility"] * downside_volatility,
+        "avg_daily_volume_inverse": _RISK_BREAKDOWN_WEIGHTS["avg_daily_volume_inverse"] * avg_daily_volume_inverse,
+    }
+    raw_score_formula = sum(weighted.values())
 
     denominator = max_raw_score - min_raw_score
     if denominator > 0:
@@ -279,28 +267,16 @@ def _build_risk_breakdown(risk_row, min_raw_score, max_raw_score):
         normalized_from_formula = float(risk_row.risk_score_1_10)
 
     return {
-        "weights": {
-            "annualized_volatility": 0.30,
-            "max_drawdown": 0.25,
-            "var_95": 0.20,
-            "downside_volatility": 0.15,
-            "avg_daily_volume_inverse": 0.10,
-        },
+        "weights": dict(_RISK_BREAKDOWN_WEIGHTS),
         "components": {
             "annualized_volatility": annualized_volatility,
             "max_drawdown_abs": max_drawdown_abs,
             "var_95_abs": var_95_abs,
             "downside_volatility": downside_volatility,
             "avg_daily_volume": avg_daily_volume,
-            "avg_daily_volume_inverse": 1 / (avg_daily_volume + 1),
+            "avg_daily_volume_inverse": avg_daily_volume_inverse,
         },
-        "weighted_components": {
-            "annualized_volatility": weighted_volatility,
-            "max_drawdown": weighted_drawdown,
-            "var_95": weighted_var_95,
-            "downside_volatility": weighted_downside,
-            "avg_daily_volume_inverse": weighted_volume_inverse,
-        },
+        "weighted_components": weighted,
         "raw_score": float(risk_row.raw_risk_score),
         "raw_score_from_formula": raw_score_formula,
         "min_raw_score": min_raw_score,
@@ -310,13 +286,49 @@ def _build_risk_breakdown(risk_row, min_raw_score, max_raw_score):
     }
 
 
+def _svd_top_drivers(q, d, products, svd, feature_names, top_k=5, top_terms=4):
+    top_dims = np.argsort(np.abs(products))[::-1][:top_k]
+    drivers = []
+
+    for dim in top_dims:
+        if q[dim] > 0 and d[dim] > 0:
+            relationship = "both positive"
+        elif q[dim] < 0 and d[dim] < 0:
+            relationship = "both negative"
+        else:
+            relationship = "opposite signs"
+
+        component = svd.components_[dim]
+        top_pos_idx = component.argsort()[-top_terms:][::-1]
+        top_neg_idx = component.argsort()[:top_terms]
+        pos_terms = [feature_names[j].replace("_", " ") for j in top_pos_idx]
+        neg_terms = [feature_names[j].replace("_", " ") for j in top_neg_idx]
+
+        label_terms = pos_terms[:3]
+        label = "Theme: " + (", ".join(label_terms) if label_terms else "mixed market language")
+
+        drivers.append(
+            {
+                "dimension": int(dim),
+                "label": label,
+                "query_value": float(q[dim]),
+                "stock_value": float(d[dim]),
+                "contribution": float(products[dim]),
+                "relationship": relationship,
+                "top_positive_terms": pos_terms,
+                "top_negative_terms": neg_terms,
+            }
+        )
+
+    return drivers
+
+
 def _build_similarity_explanation(
     idx,
     score,
     use_svd,
     query_repr,
     doc_repr,
-    vectorizer,
     portfolio_weight,
     text_weight,
     text_weight_level,
@@ -330,41 +342,6 @@ def _build_similarity_explanation(
         dot_product = float(np.dot(q, d))
         query_norm = float(np.linalg.norm(q))
         stock_norm = float(np.linalg.norm(d))
-        denominator = query_norm * stock_norm
-        top_dims = np.argsort(np.abs(products))[::-1][:5]
-
-        top_drivers = []
-        for dim in top_dims:
-            if q[dim] > 0 and d[dim] > 0:
-                relationship = "both positive"
-            elif q[dim] < 0 and d[dim] < 0:
-                relationship = "both negative"
-            else:
-                relationship = "opposite signs"
-
-            component = svd.components_[dim]
-            top_pos_idx = component.argsort()[-4:][::-1]
-            top_neg_idx = component.argsort()[:4]
-            pos_terms = [feature_names[j].replace("_", " ") for j in top_pos_idx]
-            neg_terms = [feature_names[j].replace("_", " ") for j in top_neg_idx]
-            label_terms = pos_terms[:3]
-            if label_terms:
-                label = "Theme: " + ", ".join(label_terms)
-            else:
-                label = "Theme: mixed market language"
-
-            top_drivers.append(
-                {
-                    "dimension": int(dim),
-                    "label": label,
-                    "query_value": float(q[dim]),
-                    "stock_value": float(d[dim]),
-                    "contribution": float(products[dim]),
-                    "relationship": relationship,
-                    "top_positive_terms": pos_terms,
-                    "top_negative_terms": neg_terms,
-                }
-            )
 
         return {
             "method": "svd_cosine",
@@ -372,11 +349,11 @@ def _build_similarity_explanation(
             "dot_product": dot_product,
             "query_norm": query_norm,
             "stock_norm": stock_norm,
-            "denominator": denominator,
+            "denominator": query_norm * stock_norm,
             "portfolio_weight": portfolio_weight,
             "text_weight": text_weight,
             "text_weight_level": text_weight_level,
-            "top_drivers": top_drivers,
+            "top_drivers": _svd_top_drivers(q, d, products, svd, feature_names),
         }
 
     query_vec = query_repr[0]
@@ -385,7 +362,6 @@ def _build_similarity_explanation(
     dot_product = float(query_vec.multiply(stock_vec).sum())
     query_norm = float(np.sqrt(query_vec.multiply(query_vec).sum()))
     stock_norm = float(np.sqrt(stock_vec.multiply(stock_vec).sum()))
-    denominator = query_norm * stock_norm
 
     if overlap.nnz:
         sorted_indices = np.argsort(np.abs(overlap.data))[::-1][:5]
@@ -405,7 +381,7 @@ def _build_similarity_explanation(
         "dot_product": dot_product,
         "query_norm": query_norm,
         "stock_norm": stock_norm,
-        "denominator": denominator,
+        "denominator": query_norm * stock_norm,
         "portfolio_weight": portfolio_weight,
         "text_weight": text_weight,
         "text_weight_level": text_weight_level,
@@ -413,13 +389,32 @@ def _build_similarity_explanation(
     }
 
 
+def _expand_query_with_llm(desired_characteristics):
+    
+    try:
+        client = LLMClient(api_key=os.getenv("SPARK_API_KEY"))
+        return expand_stock_query(desired_characteristics, client)
+    except Exception:
+        return desired_characteristics
+
+
+def _llm_rerank(top_results, query_for_retrieval):
+    try:
+        client = LLMClient(api_key=os.getenv("SPARK_API_KEY"))
+        ranking = get_ai_ticker_ranking([r["ticker"] for r in top_results], client, query_for_retrieval)
+        top_tickers_by_result = {r["ticker"]: r for r in top_results}
+        reranked = [top_tickers_by_result[t] for t in ranking if t in top_tickers_by_result]
+        return reranked if len(reranked) == len(top_results) else top_results
+    except Exception:
+        traceback.print_exc()
+        return top_results
+
+
 def get_stock_recommendations(
     user_portfolio,
     desired_characteristics="",
     top_k=4,
-    vectorizer=TfidfVectorizer(stop_words="english", max_features=5000, ngram_range=(1, 3), min_df=10),
     use_svd=True,
-    n_components=20,
     portfolio_weight=1,
     text_weight=150,
     text_weight_level="medium",
@@ -430,123 +425,82 @@ def get_stock_recommendations(
     tickers = INDEX.tickers
     ticker_docs = INDEX.ticker_docs
     feature_names = INDEX.feature_names
-
-    documents = list(ticker_docs.values())
     risk_by_ticker = INDEX.risk_by_ticker
     risk_scores = INDEX.risk_scores
     min_raw_score = INDEX.min_raw_score
     max_raw_score = INDEX.max_raw_score
+    company_metadata = INDEX.company_metadata
 
-    # has 503 rows (one entry for each stock) and a certain number of words or phrases for columns
-    tfidf_matrix = INDEX.tfidf_matrix
+    portfolio_texts = [ticker_docs[t] for t in user_portfolio if t in ticker_docs]
 
-    portfolio_texts = []
-    for ticker in user_portfolio:
-        if ticker in ticker_docs:
-            portfolio_texts.append(ticker_docs[ticker])
+    query_for_retrieval = _expand_query_with_llm(desired_characteristics) if use_llm else desired_characteristics
 
-    unigram_features = INDEX.unigram_features
-    query_for_retrieval = desired_characteristics
+    corrected_characteristics, query_corrections = _fuzzy_correct_query_text(
+        query_for_retrieval, INDEX.unigram_features
+    )
 
-    if use_llm:
-        api_key = os.getenv("SPARK_API_KEY")
-        try:
-            client = LLMClient(api_key=api_key)
-            # query expansion step
-            query_for_retrieval = expand_stock_query(desired_characteristics, client)
-        except Exception:
-            query_for_retrieval = desired_characteristics
-
-    corrected_characteristics, query_corrections = _fuzzy_correct_query_text(query_for_retrieval, unigram_features)
-
-    # free text query
     characteristics_doc = corrected_characteristics.replace('"', "").replace("-", " ").lower().strip()
 
-    # case when no valid portfolio tickers or free text query were found
     if not portfolio_texts and not characteristics_doc:
         return []
 
-    # combine all portfolio ticker docs into one big doc
     portfolio_doc = " ".join(portfolio_texts).replace('"', "").replace("-", " ").lower().strip()
 
-    # weighted combined query
     combined_query_doc = (
         ((portfolio_doc + " ") * portfolio_weight) + ((characteristics_doc + " ") * text_weight)
     ).strip()
 
-    # same TF-IDF space as the S&P 500
     portfolio_vector = vectorizer.transform([combined_query_doc])
 
     if use_svd:
         svd = INDEX.svd
         doc_repr = INDEX.doc_repr
         query_repr = svd.transform(portfolio_vector)
-
-        # length 503 (for each stock in the S&P 500's similarity score to portfolio)
-        similarities = cosine_similarity(query_repr, doc_repr).flatten()
-
-        # print("\n========== SVD SEARCH RESULTS ==========")
-
-        # print top results
-        sorted_tickers_idx = np.argsort(similarities)[::-1]
-
-        recommendations_ind = []
-        for idx in sorted_tickers_idx:
-            if tickers[idx] not in user_portfolio:
-                recommendations_ind.append(idx)
-
-        recommendations_ind = recommendations_ind[:top_k]
-
-        # print("\nTop Stock Recommendations:")
-        # for idx in recommendations_ind:
-        #     print(f"{tickers[idx]} -> similarity {similarities[idx]:.4f}")
-
-        q = query_repr.flatten()
-
-        for idx in recommendations_ind:
-            d = doc_repr[idx].flatten()
-
-            explain_recommendation(idx, q, d, tickers, vectorizer, svd, top_k_dims=5)
-
     else:
-        doc_repr = tfidf_matrix
+        svd = None
+        doc_repr = INDEX.tfidf_matrix
         query_repr = portfolio_vector
 
-        # length 503 (for each stock in the S&P 500's similarity score to portfolio)
-        similarities = cosine_similarity(query_repr, doc_repr).flatten()
+    similarities = cosine_similarity(query_repr, doc_repr).flatten()
 
-    results = []
-    for idx, score in enumerate(similarities):
+    sorted_idx = np.argsort(similarities)[::-1]
+    top_indices = []
+    for idx in sorted_idx:
+        if tickers[idx] not in user_portfolio:
+            top_indices.append(idx)
+            if len(top_indices) == top_k:
+                break
+
+    top_results = []
+    for idx in top_indices:
         ticker = tickers[idx]
-        if ticker not in user_portfolio:
-            company_metadata = COMPANY_METADATA.get(ticker, {})
-            risk_row = risk_by_ticker.get(ticker)
-            results.append(
-                {
-                    "ticker": ticker,
-                    "similarity": float(score),
-                    "similarity_explanation": _build_similarity_explanation(
-                        idx,
-                        score,
-                        use_svd,
-                        query_repr,
-                        doc_repr,
-                        vectorizer,
-                        portfolio_weight,
-                        text_weight,
-                        text_weight_level,
-                        svd=svd if use_svd else None,
-                        feature_names=feature_names,
-                    ),
-                    "risk_score": risk_scores.get(ticker),
-                    "risk_breakdown": _build_risk_breakdown(risk_row, min_raw_score, max_raw_score),
-                    "company_name": company_metadata.get("company_name", ticker),
-                    "logo_url": company_metadata.get("logo_url"),
-                }
-            )
+        score = similarities[idx]
+        company_metadata = company_metadata.get(ticker, {})
+        risk_row = risk_by_ticker.get(ticker)
 
-    results.sort(key=lambda x: x["similarity"], reverse=True)
-    top_results = results[:top_k]
+        top_results.append(
+            {
+                "ticker": ticker,
+                "similarity": float(score),
+                "similarity_explanation": _build_similarity_explanation(
+                    idx,
+                    score,
+                    use_svd,
+                    query_repr,
+                    doc_repr,
+                    portfolio_weight,
+                    text_weight,
+                    text_weight_level,
+                    svd=svd,
+                    feature_names=feature_names,
+                ),
+                "risk_score": risk_scores.get(ticker),
+                "risk_breakdown": _build_risk_breakdown(risk_row, min_raw_score, max_raw_score),
+                "company_name": company_metadata.get("company_name", ticker),
+                "logo_url": company_metadata.get("logo_url"),
+            }
+        )
+
     for item in top_results:
         sentiment_summary = get_ticker_sentiment_summary(item["ticker"], max_articles=10)
         item["sentiment"] = {
@@ -554,34 +508,14 @@ def get_stock_recommendations(
             "average_compound": sentiment_summary["average_compound"],
             "article_count": sentiment_summary["article_count"],
         }
+
     top_results = _enrich_with_yfinance(top_results)
 
-    # Preserve IR-only order before any LLM reranking
+    # Preserve IR-only order before any LLM reranking.
     ir_results = list(top_results)
 
     if use_llm:
-        try:
-            api_key = os.getenv("SPARK_API_KEY")
-            client = LLMClient(api_key=api_key)
-
-            # print("IR tickers:", [result["ticker"] for result in top_results])
-            ranking = get_ai_ticker_ranking([result["ticker"] for result in top_results], client, query_for_retrieval)
-
-            temp = []
-            for ticker in ranking:
-                for result in top_results:
-                    if result["ticker"] == ticker:
-                        temp.append(result)
-
-            top_results = temp if len(temp) == len(top_results) else top_results
-
-        except Exception:
-            traceback.print_exc()
-
-        # print("original query", desired_characteristics)
-        # print("expanded query", query_for_retrieval)
-        # print("interpreted", corrected_characteristics)
-        # print("corrections", query_corrections)
+        top_results = _llm_rerank(top_results, query_for_retrieval)
 
     return {
         "recommendations": top_results,
@@ -596,176 +530,133 @@ def get_stock_recommendations(
     }
 
 
-def explain_recommendation(idx, q=[], d=[], tickers=[], vectorizer=None, svd=None, top_k_dims=3):
+def _llm_risk_bullets(normalized_ticker, top_k_risk_signals, top_k_risk_types, k_headlines):
+   
+    bullets = []
+    details = []
 
-    # print(f"\n--- {tickers[idx]} ---")
+    try:
+        client = LLMClient(api_key=os.getenv("SPARK_API_KEY"))
+        data = get_risk_signals_for_tickers(tickers=[normalized_ticker], client=client)
+        signals_data = data.get("signals") or {}
 
-    products = q * d
-    top_dims = np.argsort(np.abs(products))[::-1][:top_k_dims]
+        for ticker, risk_types in signals_data.items():
+            top_risks = sorted(
+                risk_types.items(),
+                key=lambda kv: sum(get_signal_count(s) for s in kv[1].values()),
+                reverse=True,
+            )[:top_k_risk_types]
 
-    feature_names = vectorizer.get_feature_names_out()
+            articles = INDEX.ticker_article_rows.get(ticker, [])
 
-    for dim in top_dims:
-        relation = (
-            "both positive"
-            if (q[dim] > 0 and d[dim] > 0)
-            else ("both negative" if (q[dim] < 0 and d[dim] < 0) else "opposite signs")
-        )
+            for risk_type_idx, (risk_type, signals) in enumerate(top_risks):
+                if not signals:
+                    continue
 
-        component = svd.components_[dim]
+                top_signal_items = sorted(
+                    signals.items(),
+                    key=lambda kv: get_signal_count(kv[1]),
+                    reverse=True,
+                )[:top_k_risk_signals]
 
-        top_pos_idx = component.argsort()[-5:][::-1]
-        top_neg_idx = component.argsort()[:5]
+                signal_names = [signal for signal, _ in top_signal_items]
+                signal_text = " and ".join(signal_names)
 
-        pos_terms = [feature_names[j] for j in top_pos_idx]
-        neg_terms = [feature_names[j] for j in top_neg_idx]
+                article_indices = []
+                for _, info in top_signal_items:
+                    if isinstance(info, dict):
+                        for i in info.get("article_indices") or []:
+                            if i not in article_indices:
+                                article_indices.append(i)
 
-        # print(f"\nDimension {dim}")
-        # print(f"  Query value: {q[dim]:.4f}")
-        # print(f"  Stock value: {d[dim]:.4f}")
-        # print(f"  Product: {products[dim]:.4f}")
-        # print(f"  Relationship: {relation}")
-        # print(f"  Positive terms: {pos_terms}")
-        # print(f"  Negative terms: {neg_terms}")
+                headlines = [
+                    {
+                        "title": articles[i].headline,
+                        "url": get_article_url(ticker, articles[i].headline),
+                    }
+                    for i in article_indices
+                    if 0 <= i < len(articles)
+                ][:k_headlines]
+
+                bullet = f"{risk_type} due to {signal_text} risk signals"
+
+                bullets.append(bullet)
+                details.append({"bullet": bullet, "headlines": headlines})
+
+    except Exception:
+        traceback.print_exc()
+        return [], []
+
+    return bullets, details
+
+
+def _keyword_risk_bullets(normalized_ticker, max_articles, top_k_risk_signals, top_k_risk_types, k_headlines):
+    risk_counts = Counter()
+    keyword_hits = defaultdict(list)
+    headline_hits = defaultdict(list)
+
+    articles = INDEX.ticker_article_rows.get(normalized_ticker, [])[:max_articles]
+    for article in articles:
+        article_text = f"{article.headline} {article.summary}".replace("-", " ").lower()
+        matched_types = set()
+
+        for risk_type, keywords in RISK_KEYWORDS.items():
+            pattern = re.compile(r"\b(?:" + "|".join(re.escape(k) for k in keywords) + r")\b", re.IGNORECASE)
+            matches = pattern.findall(article_text)
+            if matches:
+                risk_counts[risk_type] += len(matches)
+                keyword_hits[risk_type].extend(m.lower() for m in matches)
+                matched_types.add(risk_type)
+
+        for risk_type in matched_types:
+            if len(headline_hits[risk_type]) < k_headlines:
+                headline_hits[risk_type].append(
+                    {
+                        "title": article.headline,
+                        "url": INDEX.article_link_lookup.get((normalized_ticker, article.headline)),
+                    }
+                )
+
+    if not risk_counts:
+        no_signal = {
+            "bullet": "no apparent risk themes based on recent news. need more info to generate summary.",
+            "headlines": [],
+        }
+        return [no_signal["bullet"]], [no_signal]
+
+    bullets = []
+    details = []
+    top_risks = [r for r, _ in risk_counts.most_common(top_k_risk_types)]
+    for i, risk in enumerate(top_risks):
+        keywords = list(dict.fromkeys(keyword_hits.get(risk, [])))[:top_k_risk_signals]
+        if keywords:
+            bullet = f"{risk} due to {' and '.join(keywords)} risk signals"
+        else:
+            bullet = f"Susceptible to {risk}"
+
+        bullets.append(bullet)
+        details.append({"bullet": bullet, "headlines": headline_hits.get(risk, [])})
+
+    return bullets, details
 
 
 def get_recommendation_desc(
-    ticker, max_articles=25, use_llm=True, top_k_risk_signals=2, top_k_risk_types=2, k_headlines=3
+    ticker,
+    max_articles=25,
+    use_llm=True,
+    top_k_risk_signals=2,
+    top_k_risk_types=2,
+    k_headlines=3,
 ):
-    bullets = []
-    details = []
     normalized_ticker = ticker.upper().strip()
 
+    bullets, details = ([], [])
     if use_llm:
-        try:
-            api_key = os.getenv("SPARK_API_KEY")
-            client = LLMClient(api_key=api_key)
+        bullets, details = _llm_risk_bullets(normalized_ticker, top_k_risk_signals, top_k_risk_types, k_headlines)
 
-            # get_ticker_summary(tickers=[normalized_ticker], client=client)
-
-            data = get_risk_signals_for_tickers(tickers=[normalized_ticker], client=client)
-
-            signals_data = data.get("signals")
-            ticker_docs = data.get("ticker_docs")
-
-            for ticker, risk_types in signals_data.items():
-                docs = ticker_docs.get(ticker)
-                top_risks = sorted(
-                    risk_types.items(),
-                    key=lambda kv: sum(get_signal_count(signal) for signal in kv[1].values()),
-                    reverse=True,
-                )[:top_k_risk_types]
-
-                articles = INDEX.ticker_article_rows.get(ticker, [])
-
-                for risk_type_idx, (risk_type, signals) in enumerate(top_risks):
-                    if not signals:
-                        continue
-                    top_signal_items = sorted(
-                        signals.items(),
-                        key=lambda kv: get_signal_count(kv[1]),
-                        reverse=True,
-                    )[:top_k_risk_signals]
-
-                    signal_names = [signal for signal, _ in top_signal_items]
-                    signal_text = " and ".join(signal_names)
-
-                    article_indices = []
-                    for _, info in top_signal_items:
-                        if isinstance(info, dict):
-                            for i in info.get("article_indices"):
-                                if i not in article_indices:
-                                    article_indices.append(i)
-
-                    headlines = [
-                        {
-                            "title": articles[i].headline,
-                            "url": get_article_url(ticker, articles[i].headline),
-                        }
-                        for i in article_indices
-                        if 0 <= i < len(articles)
-                    ][:k_headlines]
-
-                    suffix = " in recent news coverage" if risk_type_idx == 0 else ""
-                    bullet = f"{risk_type} due to {signal_text} risk signals{suffix}"
-
-                    # print(get_ticker_summary(tickers=[ticker], client=client))
-
-                    bullets.append(bullet)
-                    details.append(
-                        {
-                            "bullet": bullet,
-                            "headlines": headlines,
-                        }
-                    )
-
-        except Exception:
-            traceback.print_exc()
-
-    if not use_llm or (not details and not bullets):
-        # counts number of times each risk signal appears
-        risk_counts = Counter()
-
-        # keeps track of which keyword within the risk signal was matched
-        keyword_hits = defaultdict(list)
-
-        # tracks which article headlines matched each risk type (up to 3 per type)
-        headline_hits = defaultdict(list)
-
-        # count keyword matches per article
-        for article in INDEX.ticker_article_rows.get(normalized_ticker, [])[:max_articles]:
-
-            article_text = f"{article.headline} {article.summary}".replace("-", " ").lower()
-            matched_types = set()
-
-            for risk_type, keywords in RISK_KEYWORDS.items():
-                keywords_pattern = re.compile(
-                    r"\b(?:" + "|".join(re.escape(k) for k in keywords) + r")\b", re.IGNORECASE
-                )
-                matches = keywords_pattern.findall(article_text)
-                if matches:
-                    risk_counts[risk_type] += len(matches)
-                    keyword_hits[risk_type].extend(m.lower() for m in matches)
-                    matched_types.add(risk_type)
-
-            for risk_type in matched_types:
-                if len(headline_hits[risk_type]) < k_headlines:
-                    headline_hits[risk_type].append(
-                        {
-                            "title": article.headline,
-                            "url": INDEX.article_link_lookup.get((normalized_ticker, article.headline)),
-                        }
-                    )
-
-        # the case where no keywords match
-        if not risk_counts:
-            no_signal_result = {
-                "bullet": "no apparent risk themes based on recent news. need more info to generate summary.",
-                "headlines": [],
-            }
-            return {
-                "bullets": [no_signal_result["bullet"]],
-                "details": [no_signal_result],
-            }
-
-        # top 2 risk types
-        top_risks = [r for r, _ in risk_counts.most_common(top_k_risk_types)]
-
-        for i, risk in enumerate(top_risks):
-            keywords = list(dict.fromkeys(keyword_hits.get(risk, [])))[:top_k_risk_signals]
-
-            if keywords:
-                suffix = " in recent news coverage" if i == 0 else ""
-                bullet = f"{risk} due to {' and '.join(keywords)} risk signals{suffix}"
-            else:
-                bullet = f"Susceptible to {risk}"
-
-            bullets.append(bullet)
-            details.append(
-                {
-                    "bullet": bullet,
-                    "headlines": headline_hits.get(risk, []),
-                }
-            )
+    if not use_llm or (not bullets and not details):
+        bullets, details = _keyword_risk_bullets(
+            normalized_ticker, max_articles, top_k_risk_signals, top_k_risk_types, k_headlines
+        )
 
     return {"bullets": bullets, "details": details}

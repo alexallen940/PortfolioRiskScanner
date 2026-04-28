@@ -7,64 +7,53 @@ Setup:
   2. Set USE_LLM = True in routes.py
 """
 
-import json
-import os
-import re
-from flask import request, jsonify, Response, stream_with_context
-from infosci_spark_client import LLMClient
-from services.llm_services import _get_client, get_ticker_summary, get_risk_signals_for_tickers, get_ai_ticker_ranking
+from flask import jsonify, request
+
+from services.llm_services import (
+    _get_client,
+    get_ai_ticker_ranking,
+    get_risk_signals_for_tickers,
+    get_ticker_summary,
+)
+
+def _tickers_from_request():
+    data = request.get_json() or {}
+    tickers = data.get("tickers", [])
+    if not tickers:
+        return data, tickers, (jsonify({"error": "No tickers provided"}), 400)
+    return data, tickers, None
 
 
 def tickers_summary_decision():
-
-    data = request.get_json() or {}
-    tickers = data.get("tickers", [])
+    data, tickers, err = _tickers_from_request()
+    if err:
+        return err
     positive_bias = data.get("positive_bias", False)
-
-    if not tickers:
-        return jsonify({"error": "No tickers provided"}), 400
-
-    result = get_ticker_summary(tickers, _get_client(), positive_bias)
-    return jsonify(result)
+    return jsonify(get_ticker_summary(tickers, _get_client(), positive_bias))
 
 
 def tickers_risk_signals_decision():
-    data = request.get_json() or {}
-    recommended_tickers = data.get("tickers", [])
-
-    if not recommended_tickers:
-        return jsonify({"error": "No tickers provided"}), 400
-
-    result = get_risk_signals_for_tickers(recommended_tickers, _get_client())
-    return jsonify(result)
+    _, tickers, err = _tickers_from_request()
+    if err:
+        return err
+    return jsonify(get_risk_signals_for_tickers(tickers, _get_client()))
 
 
 def ai_ticker_ranking_decision():
-    data = request.get_json() or {}
-    tickers = data.get("tickers", [])
+    data, tickers, err = _tickers_from_request()
+    if err:
+        return err
     free_text_query = data.get("free_text_query", None)
-
-    if not tickers:
-        return jsonify({"error": "No tickers provided"}), 400
-
-    result = get_ai_ticker_ranking(tickers, _get_client(), free_text_query)
-    return jsonify(result)
+    return jsonify(get_ai_ticker_ranking(tickers, _get_client(), free_text_query))
 
 
-def register_ai_ticker_ranking_route(app):
-    @app.route("/api/portfolio/ai-ticker-ranking", methods=["POST"])
-    def ai_ticker_ranking_route():
-        return ai_ticker_ranking_decision()
+_LLM_ROUTES = (
+    ("/api/portfolio/ai-ticker-ranking", "ai_ticker_ranking_route", ai_ticker_ranking_decision),
+    ("/api/portfolio/recommendations-summary", "tickers_summary_route", tickers_summary_decision),
+    ("/api/portfolio/recommendations-risk-signals", "tickers_risk_signals_route", tickers_risk_signals_decision),
+)
 
 
-def register_tickers_summary_route(app):
-    @app.route("/api/portfolio/recommendations-summary", methods=["POST"])
-    def tickers_summary_route():
-        return tickers_summary_decision()
-
-
-def register_tickers_risk_signals_route(app):
-    @app.route("/api/portfolio/recommendations-risk-signals", methods=["POST"])
-    def tickers_risk_signals_route():
-        return tickers_risk_signals_decision()
-
+def register_llm_routes(app):
+    for url, endpoint, view in _LLM_ROUTES:
+        app.add_url_rule(url, endpoint, view, methods=["POST"])
