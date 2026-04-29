@@ -105,7 +105,6 @@
   --logo-text: #a8c4d4;
   --logo-border: #2f3d36;
 
-
   --text-primary: #e8f3ec;
   --text-secondary: #d4e2d8;
   --text-input: #f0f7f3;
@@ -162,12 +161,13 @@
   --volatility-text: #86efac;
 }
 
-
 html,
 body {
   background: var(--bg-page);
   color: var(--text-secondary);
-  transition: background 0.3s ease, color 0.3s ease;
+  transition:
+    background 0.3s ease,
+    color 0.3s ease;
 }
 
 .app-shell {
@@ -215,12 +215,12 @@ body {
   align-items: start;
 }
 
-.control-panel-form>.control-panel:nth-of-type(1) {
+.control-panel-form > .control-panel:nth-of-type(1) {
   grid-column: 1;
   grid-row: 1;
 }
 
-.control-panel-form>.control-panel:nth-of-type(2) {
+.control-panel-form > .control-panel:nth-of-type(2) {
   grid-column: 2;
   grid-row: 1 / span 2;
 }
@@ -253,7 +253,7 @@ body {
 
 .site-title {
   margin: 0;
-  font-family: 'Sora', sans-serif;
+  font-family: "Sora", sans-serif;
   font-size: clamp(2.2rem, 5vw, 3.6rem);
   font-weight: 700;
   line-height: 1.05;
@@ -279,7 +279,10 @@ body {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  transition: transform 0.18s ease, border-color 0.18s ease, background 0.18s ease;
+  transition:
+    transform 0.18s ease,
+    border-color 0.18s ease,
+    background 0.18s ease;
   flex-shrink: 0;
 }
 
@@ -299,16 +302,24 @@ body {
 }
 
 .control-panel {
-  background: linear-gradient(180deg, var(--bg-card-gradient-start), var(--bg-card-gradient-end));
+  background: linear-gradient(
+    180deg,
+    var(--bg-card-gradient-start),
+    var(--bg-card-gradient-end)
+  );
 }
 
 .results-panel {
-  background: linear-gradient(180deg, var(--bg-card-gradient-start), var(--bg-card-gradient-end-warm));
+  background: linear-gradient(
+    180deg,
+    var(--bg-card-gradient-start),
+    var(--bg-card-gradient-end-warm)
+  );
 }
 
 .panel-header h2 {
   margin: 0;
-  font-family: 'Sora', sans-serif;
+  font-family: "Sora", sans-serif;
   font-size: 1.6rem;
   color: var(--text-primary);
 }
@@ -342,10 +353,12 @@ body {
   color: var(--text-input);
   font: inherit;
   resize: vertical;
-  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+  transition:
+    border-color 0.15s ease,
+    box-shadow 0.15s ease;
 }
 
-.field-block input[type='file'] {
+.field-block input[type="file"] {
   width: 100%;
   border: 1px dashed var(--border-dashed);
   border-radius: 10px;
@@ -399,7 +412,6 @@ body {
   color: var(--text-faint);
 }
 
-
 .submit-button {
   width: 100%;
   margin-top: 22px;
@@ -408,11 +420,14 @@ body {
   padding: 16px 20px;
   background: var(--accent-green-dark);
   color: var(--text-on-accent);
-  font-family: 'Sora', sans-serif;
+  font-family: "Sora", sans-serif;
   font-size: 1rem;
   cursor: pointer;
   box-shadow: var(--shadow-button);
-  transition: transform 0.18s ease, background 0.18s ease, box-shadow 0.18s ease;
+  transition:
+    transform 0.18s ease,
+    background 0.18s ease,
+    box-shadow 0.18s ease;
 }
 
 .submit-button:hover {
@@ -504,7 +519,6 @@ body {
   font-weight: 600;
 }
 
-
 .risk-score-section {
   margin-top: 10px;
   display: grid;
@@ -570,7 +584,7 @@ body {
 .summary-card strong,
 .score-pill strong,
 .mini-card-top strong {
-  font-family: 'Sora', sans-serif;
+  font-family: "Sora", sans-serif;
   font-size: 2rem;
 }
 
@@ -579,7 +593,6 @@ body {
   padding-top: 24px;
   border-top: 2px solid var(--accent-green-dark);
 }
-
 
 .info-popover-wrap {
   position: relative;
@@ -599,7 +612,10 @@ body {
   color: var(--text-primary);
   cursor: pointer;
   box-shadow: var(--shadow-formula-trigger);
-  transition: transform 0.18s ease, border-color 0.18s ease, box-shadow 0.18s ease;
+  transition:
+    transform 0.18s ease,
+    border-color 0.18s ease,
+    box-shadow 0.18s ease;
 }
 
 .formula-trigger:hover,
@@ -629,7 +645,7 @@ body {
 }
 
 .formula-popover::before {
-  content: '';
+  content: "";
   position: absolute;
   top: -7px;
   right: 14px;
@@ -641,7 +657,7 @@ body {
 
 .popover-kicker {
   margin-bottom: 6px;
-  font-family: 'Sora', sans-serif;
+  font-family: "Sora", sans-serif;
   font-size: 0.76rem;
   letter-spacing: 0.08em;
   text-transform: uppercase;
@@ -670,11 +686,10 @@ body {
   color: var(--text-popover-subheading);
 }
 
-
 .tickers-array {
   margin-top: 4px;
   margin-bottom: 16px;
-  font-family: 'Courier New', Courier, monospace;
+  font-family: "Courier New", Courier, monospace;
   font-size: 0.95rem;
   color: var(--accent-green);
   font-weight: 700;
@@ -697,7 +712,7 @@ body {
 }
 
 .section-divider {
-  font-family: 'Sora', sans-serif;
+  font-family: "Sora", sans-serif;
   font-size: 1.6rem;
   font-weight: 700;
   color: var(--text-primary);
@@ -727,7 +742,7 @@ body {
 
 .mini-card-top span,
 .mini-card-top strong {
-  font-family: 'Sora', sans-serif;
+  font-family: "Sora", sans-serif;
   color: var(--text-on-summary);
 }
 
@@ -762,7 +777,10 @@ body {
   font-size: 0.85rem;
   font-weight: 500;
   cursor: pointer;
-  transition: background 0.15s, border-color 0.15s, color 0.15s;
+  transition:
+    background 0.15s,
+    border-color 0.15s,
+    color 0.15s;
 }
 
 .suggestions-tab:hover {
@@ -792,10 +810,40 @@ body {
   font-size: 0.92rem;
   line-height: 1.65;
   color: var(--text-secondary);
+  white-space: pre-line;
 }
 
 .ai-overview-summary p {
   margin: 0;
+}
+
+.ai-overview-header {
+  margin-bottom: 1rem;
+}
+
+.ai-overview-heading {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin: 0 0 0.25rem 0;
+  font-size: 1rem;
+  font-weight: 600;
+}
+
+.ai-overview-subtitle {
+  margin: 0;
+  font-size: 0.8125rem;
+  font-weight: 400;
+  opacity: 0.65;
+  line-height: 1.4;
+}
+
+.ai-overview-paragraph {
+  margin: 0;
+}
+
+.ai-overview-paragraph + .ai-overview-paragraph {
+  margin-top: 1em;
 }
 
 .recommendation-card {
@@ -803,12 +851,19 @@ body {
   width: 100%;
   padding: 22px;
   border-radius: 24px;
-  background: linear-gradient(180deg, var(--bg-rec-card-start), var(--bg-rec-card-end));
+  background: linear-gradient(
+    180deg,
+    var(--bg-rec-card-start),
+    var(--bg-rec-card-end)
+  );
   border: 1px solid var(--border-input);
   text-align: left;
   cursor: pointer;
   box-shadow: var(--shadow-rec-card);
-  transition: transform 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease;
+  transition:
+    transform 0.2s ease,
+    box-shadow 0.2s ease,
+    border-color 0.2s ease;
 }
 
 .recommendation-card:hover,
@@ -841,7 +896,9 @@ body {
   font-weight: 600;
   padding: 8px 14px;
   cursor: pointer;
-  transition: border-color 0.15s ease, background 0.15s ease;
+  transition:
+    border-color 0.15s ease,
+    background 0.15s ease;
 }
 
 .recommendation-expand-toggle:hover,
@@ -856,7 +913,6 @@ body {
   padding-top: 16px;
   border-top: 1px solid var(--border-input);
 }
-
 
 .suggestion-header {
   display: flex;
@@ -883,7 +939,7 @@ body {
   border: 1px solid var(--logo-border);
   background: var(--bg-logo);
   color: var(--logo-text);
-  font-family: 'Sora', sans-serif;
+  font-family: "Sora", sans-serif;
   font-size: 0.78rem;
   font-weight: 700;
   text-transform: uppercase;
@@ -929,7 +985,7 @@ body {
 }
 
 .suggestion-risk-value {
-  font-family: 'Sora', sans-serif;
+  font-family: "Sora", sans-serif;
   font-size: 1.05rem;
   color: var(--text-primary);
 }
@@ -946,26 +1002,25 @@ body {
   flex-wrap: wrap;
   gap: 8px;
   margin: 0;
-  font-family: 'Sora', sans-serif;
+  font-family: "Sora", sans-serif;
   font-size: 1.5rem;
   color: var(--text-primary);
 }
 
 .ticker-symbol {
   min-width: 56px;
-  font-family: 'Sora', sans-serif;
+  font-family: "Sora", sans-serif;
   font-size: 1.2rem;
   color: var(--text-primary);
 }
 
 .rec-number {
   min-width: 2.4rem;
-  font-family: 'Sora', sans-serif;
+  font-family: "Sora", sans-serif;
   font-weight: 700;
   color: var(--text-primary);
   margin-right: 0;
 }
-
 
 .modal-backdrop {
   position: fixed;
@@ -984,7 +1039,11 @@ body {
   overflow: auto;
   padding: 28px;
   border-radius: 28px;
-  background: linear-gradient(180deg, var(--bg-modal-start), var(--bg-modal-end));
+  background: linear-gradient(
+    180deg,
+    var(--bg-modal-start),
+    var(--bg-modal-end)
+  );
   border: 1px solid var(--border-soft);
   box-shadow: var(--shadow-modal);
 }
@@ -997,7 +1056,7 @@ body {
 }
 
 .modal-kicker {
-  font-family: 'Sora', sans-serif;
+  font-family: "Sora", sans-serif;
   font-size: 0.78rem;
   letter-spacing: 0.08em;
   text-transform: uppercase;
@@ -1006,7 +1065,7 @@ body {
 
 .detail-modal-header h3 {
   margin-top: 8px;
-  font-family: 'Sora', sans-serif;
+  font-family: "Sora", sans-serif;
   font-size: clamp(2rem, 6vw, 2.8rem);
   color: var(--text-primary);
 }
@@ -1073,7 +1132,7 @@ body {
 }
 
 .detail-metric-value {
-  font-family: 'Sora', sans-serif;
+  font-family: "Sora", sans-serif;
   font-size: 1.2rem;
   font-weight: 700;
   color: var(--text-primary);
@@ -1084,7 +1143,7 @@ body {
 }
 
 .detail-section h4 {
-  font-family: 'Sora', sans-serif;
+  font-family: "Sora", sans-serif;
   font-size: 0.88rem;
   color: var(--text-primary);
   text-transform: uppercase;
@@ -1232,7 +1291,6 @@ body {
   color: var(--text-faint);
 }
 
-
 .sentiment-badge {
   display: inline-flex;
   align-items: center;
@@ -1341,8 +1399,6 @@ body {
   color: var(--badge-negative-text);
 }
 
-
-
 @media (max-width: 1080px) {
   .summary-card {
     grid-template-columns: 1fr;
@@ -1358,8 +1414,8 @@ body {
     grid-template-columns: 1fr;
   }
 
-  .control-panel-form>.control-panel:nth-of-type(1),
-  .control-panel-form>.control-panel:nth-of-type(2),
+  .control-panel-form > .control-panel:nth-of-type(1),
+  .control-panel-form > .control-panel:nth-of-type(2),
   .form-actions {
     grid-column: 1;
     grid-row: auto;

@@ -149,7 +149,7 @@ _RISK_SIGNALS_TICKERS_PROMPT = (
 _TICKERS_SUMMARY_PROMPT = (
     "You will receive:\n"
     "1) A dictionary mapping stock tickers to a list of article objects.\n"
-    "2) A boolean flag indicating whether to use positive bias and if false, be harsh and find any risk signals you can.\n"
+    "2) A boolean flag indicating whether to use positive bias and if false, be analytically neutral and find any risk signals you can.\n"
     "Each article object has:\n"
     "- headline\n"
     "- text\n\n"
@@ -226,7 +226,7 @@ _AI_OVERVIEW_PROMPT = (
     "Summary rules:\n"
     "- Use SEMANTIC reasoning, not exact keyword overlap only.\n"
     "- Reference the themes, risks, business characteristics, and signals present in each ticker's articles.\n"
-    "- For the portfolio assessment: give an overall stability read (e.g., stable, mixed, fragile) and call out by ticker any holdings that warrant attention, with a brief evidence-based reason. If no holdings warrant attention, say so explicitly.\n"
+    "- For the portfolio assessment: give an overall stability read (e.g., stable, mixed, fragile) and ticker callouts that warrant attention, with a brief evidence-based reason. If no holdings warrant attention, say so explicitly.\n"
     "- For the output tickers: explicitly connect each output ticker to the relevant portfolio ticker(s) and/or to the free text query.\n"
     "- Be conservative, factual, and grounded in the article evidence. Do not invent facts or give buy/sell recommendations.\n"
     "- Keep the tone neutral and analytical.\n"
@@ -282,7 +282,11 @@ def get_ai_overview(
             },
         ],
     )
-    parsed = re.sub(r"\s+", " ", (response.get("content") or "").strip())
+
+    content = (response.get("content") or "").strip()
+
+    parsed = re.sub(r"[ \t]+", " ", content)
+    parsed = re.sub(r"\n{3,}", "\n\n", parsed)
 
     return parsed
 

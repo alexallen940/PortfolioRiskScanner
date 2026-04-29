@@ -767,7 +767,22 @@ function App(): JSX.Element {
                 </p>
                 {suggestionsTab === "llm" && results.aiOverviewSummary && (
                   <div className="ai-overview-summary">
-                    <p>{results.aiOverviewSummary}</p>
+                    <div className="ai-overview-header">
+                      <h4 className="ai-overview-heading">
+                        <span
+                          className="ai-overview-sparkle"
+                          aria-hidden="true"
+                        >
+                          ✨
+                        </span>
+                        AI Overview
+                      </h4>
+                      <p className="ai-overview-subtitle">
+                        Portfolio health assessment in the 1st paragraph, followed by alignment
+                        rationale for the suggested tickers in the 2nd paragraph.
+                      </p>
+                    </div>
+                    {results.aiOverviewSummary}
                   </div>
                 )}
                 <div className="recommendation-list">
@@ -913,55 +928,55 @@ function App(): JSX.Element {
                                 <ul className="signal-bullets detail-bullets">
                                   {stock.descriptionDetails?.length
                                     ? stock.descriptionDetails.map(
-                                      (detail, bulletIndex) => (
-                                        <li
-                                          key={`${stock.ticker}-detail-${bulletIndex}`}
-                                        >
-                                          <span className="risk-bullet-text">
-                                            {detail.bullet}
-                                          </span>
-                                          {detail.headlines.length > 0 && (
-                                            <>
-                                              <div className="headlines-label">
-                                                Relevant headlines:
-                                              </div>
-                                              <ul className="headline-samples">
-                                                {detail.headlines.map(
-                                                  (hl, hlIndex) => (
-                                                    <li
-                                                      key={`${stock.ticker}-hl-${bulletIndex}-${hlIndex}`}
-                                                    >
-                                                      {hl.url ? (
-                                                        <a
-                                                          href={hl.url}
-                                                          target="_blank"
-                                                          rel="noopener noreferrer"
-                                                        >
-                                                          {hl.title}
-                                                        </a>
-                                                      ) : (
-                                                        hl.title
-                                                      )}
-                                                    </li>
-                                                  ),
-                                                )}
-                                              </ul>
-                                            </>
-                                          )}
-                                        </li>
-                                      ),
-                                    )
+                                        (detail, bulletIndex) => (
+                                          <li
+                                            key={`${stock.ticker}-detail-${bulletIndex}`}
+                                          >
+                                            <span className="risk-bullet-text">
+                                              {detail.bullet}
+                                            </span>
+                                            {detail.headlines.length > 0 && (
+                                              <>
+                                                <div className="headlines-label">
+                                                  Relevant headlines:
+                                                </div>
+                                                <ul className="headline-samples">
+                                                  {detail.headlines.map(
+                                                    (hl, hlIndex) => (
+                                                      <li
+                                                        key={`${stock.ticker}-hl-${bulletIndex}-${hlIndex}`}
+                                                      >
+                                                        {hl.url ? (
+                                                          <a
+                                                            href={hl.url}
+                                                            target="_blank"
+                                                            rel="noopener noreferrer"
+                                                          >
+                                                            {hl.title}
+                                                          </a>
+                                                        ) : (
+                                                          hl.title
+                                                        )}
+                                                      </li>
+                                                    ),
+                                                  )}
+                                                </ul>
+                                              </>
+                                            )}
+                                          </li>
+                                        ),
+                                      )
                                     : (
-                                      stock.description ?? [
-                                        "No risk summary available yet.",
-                                      ]
-                                    ).map((bullet, bulletIndex) => (
-                                      <li
-                                        key={`${stock.ticker}-${bulletIndex}`}
-                                      >
-                                        {bullet}
-                                      </li>
-                                    ))}
+                                        stock.description ?? [
+                                          "No risk summary available yet.",
+                                        ]
+                                      ).map((bullet, bulletIndex) => (
+                                        <li
+                                          key={`${stock.ticker}-${bulletIndex}`}
+                                        >
+                                          {bullet}
+                                        </li>
+                                      ))}
                                 </ul>
                               </div>
 
