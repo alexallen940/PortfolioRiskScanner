@@ -117,18 +117,62 @@ function parseTickersFromCsv(content: string): string[] {
 }
 
 async function postJson<T>(url: string, payload: object): Promise<T> {
-  const response = await fetch(url, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(payload),
-  });
+  const maxAttempts = 3;
+  const timeoutMs = 15000;
+  let lastError: Error | null = null;
 
-  const data = await response.json();
-  if (!response.ok) {
-    throw new Error(data.error || `Request failed: ${response.status}`);
+  for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+    const controller = new AbortController();
+    const timeoutId = window.setTimeout(() => controller.abort(), timeoutMs);
+
+    try {
+      const response = await fetch(url, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+        signal: controller.signal,
+      });
+
+      let data: { error?: string } | null = null;
+      try {
+        data = await response.json();
+      } catch {
+        data = null;
+      }
+
+      if (response.ok) {
+        return data as T;
+      }
+
+      // Retry transient gateway/startup errors that are common right after deploys.
+      if ([502, 503, 504].includes(response.status) && attempt < maxAttempts) {
+        await new Promise((resolve) => window.setTimeout(resolve, 400 * attempt));
+        continue;
+      }
+
+      throw new Error(data?.error || `Request failed: ${response.status}`);
+    } catch (error) {
+      const isAbort = error instanceof DOMException && error.name === "AbortError";
+      const isNetworkFailure = error instanceof TypeError;
+
+      if ((isAbort || isNetworkFailure) && attempt < maxAttempts) {
+        await new Promise((resolve) => window.setTimeout(resolve, 400 * attempt));
+        continue;
+      }
+
+      if (isAbort) {
+        lastError = new Error("Request timed out. Please retry in a moment.");
+      } else if (error instanceof Error) {
+        lastError = error;
+      } else {
+        lastError = new Error("Unable to connect to backend services.");
+      }
+    } finally {
+      window.clearTimeout(timeoutId);
+    }
   }
 
-  return data as T;
+  throw lastError ?? new Error("Unable to connect to backend services.");
 }
 
 async function fetchRecommendationDescriptions(

@@ -127,14 +127,27 @@ def register_routes(app):
             query_weight_level if query_weight_level in _QUERY_WEIGHT_MAP else _DEFAULT_QUERY_WEIGHT_LEVEL
         )
 
-        return jsonify(
-            get_stock_recommendations(
-                portfolio,
-                desired_characteristics=desired_characteristics,
-                text_weight=text_weight,
-                text_weight_level=normalized_level,
+        try:
+            return jsonify(
+                get_stock_recommendations(
+                    portfolio,
+                    desired_characteristics=desired_characteristics,
+                    text_weight=text_weight,
+                    text_weight_level=normalized_level,
+                )
             )
-        )
+        except Exception:
+            return (
+                jsonify(
+                    {
+                        "error": (
+                            "Recommendation engine is warming up. "
+                            "Please retry in a few seconds."
+                        )
+                    }
+                ),
+                503,
+            )
 
     @app.route("/api/portfolio/risk-score", methods=["POST"])
     def portfolio_risk_score():

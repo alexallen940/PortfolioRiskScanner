@@ -35,6 +35,7 @@ class RecommendationIndex:
         self.company_metadata = {}
         self.article_link_lookup = {}
         self._built = False
+        self._last_error = None
 
     def build(self, max_features=5000, ngram_range=(1, 3), min_df=10, n_components=20, max_df=0.95):
         try:
@@ -102,10 +103,17 @@ class RecommendationIndex:
             self.company_metadata = _load_company_metadata()
             self.article_link_lookup = _load_article_link_lookup()
             self._built = True
+            self._last_error = None
+            return True
 
-        except Exception:
+        except Exception as exc:
             traceback.print_exc()
+            self._built = False
+            self._last_error = exc
+            return False
 
     def ensure_built(self):
         if not self._built:
-            self.build()
+            built = self.build()
+            if not built:
+                raise RuntimeError("Recommendation index is not available") from self._last_error

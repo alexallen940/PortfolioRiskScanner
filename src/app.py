@@ -6,7 +6,6 @@ from flask import Flask
 from flask_cors import CORS
 from models import db, Article, RiskData
 from routes import register_routes
-from services.recommender import INDEX
 
 
 load_dotenv()
@@ -88,9 +87,6 @@ def init_db():
 
 
 init_db()
-
-with app.app_context():
-    INDEX.build(max_features=5000, ngram_range=(1, 2), min_df=10, n_components=20, max_df=0.95)
 
 
 if __name__ == "__main__":

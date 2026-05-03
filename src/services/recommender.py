@@ -2,6 +2,7 @@ import difflib
 import os
 import re
 import traceback
+from concurrent.futures import ThreadPoolExecutor, TimeoutError as FutureTimeoutError
 from collections import Counter, defaultdict
 from urllib.parse import urlparse
 import numpy as np
@@ -133,9 +134,19 @@ def _fetch_yfinance_metadata(ticker):
 
 
 def _enrich_with_yfinance(results):
+    def _fetch_with_timeout(ticker, timeout_seconds=1.5):
+        executor = ThreadPoolExecutor(max_workers=1)
+        future = executor.submit(_fetch_yfinance_metadata, ticker)
+        try:
+            return future.result(timeout=timeout_seconds)
+        except FutureTimeoutError:
+            return None
+        finally:
+            executor.shutdown(wait=False, cancel_futures=True)
+
     enriched = []
     for item in results:
-        yf_data = _fetch_yfinance_metadata(item.get("ticker", ""))
+        yf_data = _fetch_with_timeout(item.get("ticker", ""))
         if not yf_data:
             enriched.append(item)
             continue
